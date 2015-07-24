@@ -1,0 +1,35 @@
+{
+  "name": "readout",
+  "main": "readout.js",
+  "version": "0.0.0",
+  "homepage": "https://github.com/asimpletune/readout",
+  "authors": [
+    "Spencer Scorcelletti <asimpletune@icloud.com>"
+  ],
+  "description": "A tool for inserting markdown content into your site as HTML",
+  "keywords": [
+    "markdown",
+    "content",
+    "documentation",
+    "easy",
+    "write",
+    "as",
+    "insert",
+    "js",
+    "javascript",
+    "md"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "showdown": "~1.2.2",
+    "jquery": "~2.1.4"
+  },
+  "moduleType": []
+}
