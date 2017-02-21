@@ -1,4 +1,6 @@
-var mocha = require('mocha')
+/* eslint-env mocha */
+
+require('mocha')
 var assert = require('chai').assert
 
 describe('this is just a test', function () {

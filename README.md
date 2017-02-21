@@ -13,48 +13,49 @@ Readout is available via bower, i.e. `bower install`, or npm, i.e. `npm install`
 
 1. Put dependencies into your html or template
 
-  ```html
-  <script type="text/javascript" src="/bower_components/dist/showdown.min.js"></script>
-  <script type="text/javascript" src="/bower_components/dist/jquery.min.js"></script>
-  <script type="text/javascript" src="/bower_components/readout.js"></script>
-  ```
+```html
+<script type="text/javascript" src="/bower_components/dist/jquery.min.js"></script>
+<script type="text/javascript" src="/bower_components/readout.js"></script>
+```
 
 2. Add the *data-readout-src* attribute where you want your markdown inserted into in your HTML, with the value being the path to the markdown file, as shown below.
 
-  ```html
-  <div data-readout-src="/content/hello.md"></div>
-  ```
+```html
+<div data-readout-src="/content/hello.md"></div>
+```
 
   You can also nest your markdown, to match your file-system's hierarchy. For example:
-  ```bash
-  # Directory of resources
-  content/
-  ├── example.md
-  └── hello.md
-  ```
 
-  ```html
-  <div data-readout-src="content">
-    <div data-readout-src="example.md"></div>
-    <div data-readout-src="hello.md"></div>
-  </div>
-  ```
+```bash
+# Directory of resources
+content/
+├── example.md
+└── hello.md
+```
+
+```html
+<div data-readout-src="content">
+  <div data-readout-src="example.md"></div>
+  <div data-readout-src="hello.md"></div>
+</div>
+```
 
 3. Call readout!
-  ```html
-  <script type="text/javascript">
-    $(function() {
-      Readout();
-    });
-  </script>
-  ```
+
+```html
+<script type="text/javascript">
+  $(function() {
+    Readout();
+  });
+</script>
+```
   You can also specify your own custom attribute, instead of *data-readout-src*, but it must follow the string pattern *data-\**
 
-  ```html
-  <!-- e.g. -->
-  <script type="text/javascript">
-    $(function() {
-      Readout("data-your-app-namespace");
-    });
-  </script>
-  ```
+```html
+<!-- e.g. -->
+<script type="text/javascript">
+  $(function() {
+    Readout("data-your-app-namespace");
+  });
+</script>
+```

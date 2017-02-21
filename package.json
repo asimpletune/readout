@@ -43,6 +43,12 @@
     "standard": "^8.6.0",
     "webpack": "^2.2.1"
   },
+  "standard": {
+    "ignore": [
+      "lib/",
+      "dist/"
+    ]
+  },
   "dependencies": {
     "showdown": "^1.6.4"
   }

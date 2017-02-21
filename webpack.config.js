@@ -3,7 +3,7 @@ module.exports = {
   output: {
     libraryTarget: 'var',
     library: 'Readout',
-    filename: './dist/readout.bundle.js'
+    filename: './dist/readout.js'
   },
   externals: {
     // require("jquery") is external and available

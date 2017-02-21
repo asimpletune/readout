@@ -14,7 +14,9 @@ module.exports = function readout (customAttribute, callback) {
         return `${result}/${readoutSrc}`
       })
     $.get(readoutSrc, function (data) {
-      let html = (new Converter()).makeHtml(data)
+      let converter = new Converter()
+      converter.setFlavor('github')
+      let html = converter.makeHtml(data)
       if (callback) {
         callback(el, html)
       } else {
