@@ -14,8 +14,8 @@ Readout is available via bower, i.e. `bower install`, or npm, i.e. `npm install`
 1. Put dependencies into your html or template
 
   ```html
-  <script type="text/javascript" src="/bower_components/showdown.min.js"></script>
-  <script type="text/javascript" src="/bower_components/jquery.min.js"></script>
+  <script type="text/javascript" src="/bower_components/dist/showdown.min.js"></script>
+  <script type="text/javascript" src="/bower_components/dist/jquery.min.js"></script>
   <script type="text/javascript" src="/bower_components/readout.js"></script>
   ```
 
