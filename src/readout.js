@@ -1,6 +1,10 @@
-var Readout = function(callback, customAttribute) {
-  let readoutNamespace = customAttribute || 'data-readout-src',
-    readoutSelector = `[${readoutNamespace}]`    
+/* global $ */
+
+import { Converter } from 'showdown'
+
+module.exports = function readout (customAttribute, callback) {
+  let readoutNamespace = customAttribute || 'data-readout-src'
+  let readoutSelector = `[${readoutNamespace}]`
   $(`${readoutSelector}:not(:has(>${readoutSelector}))`).each(function (i, el) {
     let readoutSrc = $(el).parents(readoutSelector).andSelf()
       .map(function (i, parent) {
@@ -10,7 +14,7 @@ var Readout = function(callback, customAttribute) {
         return `${result}/${readoutSrc}`
       })
     $.get(readoutSrc, function (data) {
-      let html = (new showdown.Converter()).makeHtml(data)
+      let html = (new Converter()).makeHtml(data)
       if (callback) {
         callback(el, html)
       } else {
