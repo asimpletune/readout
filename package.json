@@ -1,0 +1,35 @@
+{
+  "name": "readout",
+  "version": "0.0.0",
+  "description": "A tool for inserting markdown content into your site as HTML",
+  "main": "readout.js",
+  "scripts": {
+    "test": "mocha test/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asimpletune/readout.git"
+  },
+  "keywords": [
+    "markdown",
+    "content",
+    "documentation",
+    "easy",
+    "write",
+    "as",
+    "insert",
+    "js",
+    "javascript",
+    "md"
+  ],
+  "author": "Spencer Scorcelletti <asimpletune@icloud.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/asimpletune/readout/issues"
+  },
+  "homepage": "https://github.com/asimpletune/readout#readme",
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "mocha": "^3.2.0"
+  }
+}
