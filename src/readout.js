@@ -2,8 +2,9 @@
 
 import { Converter } from 'showdown'
 
-module.exports = function readout (customAttribute, callback) {
-  let readoutNamespace = customAttribute || 'data-readout-src'
+module.exports = function readout (opts) {
+  opts = opts || {}
+  let readoutNamespace = opts.namespace || 'data-readout-src'
   let readoutSelector = `[${readoutNamespace}]`
   $(`${readoutSelector}:not(:has(>${readoutSelector}))`).each(function (i, el) {
     let readoutSrc = $(el).parents(readoutSelector).andSelf()
@@ -17,8 +18,8 @@ module.exports = function readout (customAttribute, callback) {
       let converter = new Converter()
       converter.setFlavor('github')
       let html = converter.makeHtml(data)
-      if (callback) {
-        callback(el, html)
+      if (opts.callback) {
+        opts.callback(el, html)
       } else {
         el.innerHTML = html
       }

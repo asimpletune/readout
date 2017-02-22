@@ -1,5 +1,5 @@
 {
-  "name": "readout",
+  "name": "readout-markdown",
   "main": "dist/readout.js",
   "version": "0.0.1",
   "homepage": "http://asimpletune.github.io/readout/",

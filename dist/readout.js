@@ -2855,8 +2855,9 @@ if (typeof module !== 'undefined' && module.exports) {
 
 var _showdown = __webpack_require__(0);
 
-module.exports = function readout(customAttribute, callback) {
-  var readoutNamespace = customAttribute || 'data-readout-src';
+module.exports = function readout(opts) {
+  opts = opts || {};
+  var readoutNamespace = opts.namespace || 'data-readout-src';
   var readoutSelector = '[' + readoutNamespace + ']';
   $(readoutSelector + ':not(:has(>' + readoutSelector + '))').each(function (i, el) {
     var readoutSrc = $(el).parents(readoutSelector).andSelf().map(function (i, parent) {
@@ -2868,8 +2869,8 @@ module.exports = function readout(customAttribute, callback) {
       var converter = new _showdown.Converter();
       converter.setFlavor('github');
       var html = converter.makeHtml(data);
-      if (callback) {
-        callback(el, html);
+      if (opts.callback) {
+        opts.callback(el, html);
       } else {
         el.innerHTML = html;
       }
