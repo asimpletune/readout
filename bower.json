@@ -2,7 +2,7 @@
   "name": "readout",
   "main": "dist/readout.js",
   "version": "0.0.1",
-  "homepage": "https://github.com/asimpletune/readout",
+  "homepage": "http://asimpletune.github.io/readout/",
   "authors": [
     "Spencer Scorcelletti <asimpletune@icloud.com>"
   ],
@@ -27,8 +27,5 @@
     "test",
     "tests"
   ],
-  "dependencies": {
-    "jquery": "~2.1.4"
-  },
   "moduleType": []
 }

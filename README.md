@@ -3,7 +3,7 @@ A tool for inserting markdown content into your site as HTML
 
 This project is extremely early in its development. The premise is that when it comes to writing actual content, you probably don't need anything besides markdown. As a huge fan of it, I'd like to be able to write all of my "word-stuff" in good ol' markdown, but insert it nicely into a page.
 
-What you see so far is just a very rough prototype, more to come.
+What you see so far is just a very rough prototype, more to come. This README is rendered on the [readout site](http://asimpletune.github.io/readout/)
 
 ## Installation
 
