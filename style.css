@@ -1,0 +1,7 @@
+body .container {
+  margin: 3em auto;
+}
+
+.github-fork-ribbon::before, .github-fork-ribbon::after {
+  box-sizing: content-box;
+}

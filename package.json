@@ -50,6 +50,7 @@
     ]
   },
   "dependencies": {
+    "gfm.css": "^1.1.1",
     "showdown": "^1.6.4"
   }
 }
