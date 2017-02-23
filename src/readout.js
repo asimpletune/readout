@@ -1,5 +1,4 @@
-/* global $ */
-
+import $ from 'jquery'
 import { Converter } from 'showdown'
 
 module.exports = function readout (opts) {

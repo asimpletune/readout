@@ -64,7 +64,7 @@ var Readout =
 /******/ 	__webpack_require__.p = "";
 
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 1);
+/******/ 	return __webpack_require__(__webpack_require__.s = 2);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -2848,24 +2848,36 @@ if (typeof module !== 'undefined' && module.exports) {
 
 /***/ }),
 /* 1 */
+/***/ (function(module, exports) {
+
+module.exports = jQuery;
+
+/***/ }),
+/* 2 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
 
 
+var _jquery = __webpack_require__(1);
+
+var _jquery2 = _interopRequireDefault(_jquery);
+
 var _showdown = __webpack_require__(0);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 module.exports = function readout(opts) {
   opts = opts || {};
   var readoutNamespace = opts.namespace || 'data-readout-src';
   var readoutSelector = '[' + readoutNamespace + ']';
-  $(readoutSelector + ':not(:has(>' + readoutSelector + '))').each(function (i, el) {
-    var readoutSrc = $(el).parents(readoutSelector).andSelf().map(function (i, parent) {
+  (0, _jquery2.default)(readoutSelector + ':not(:has(>' + readoutSelector + '))').each(function (i, el) {
+    var readoutSrc = (0, _jquery2.default)(el).parents(readoutSelector).andSelf().map(function (i, parent) {
       return parent.getAttribute(readoutNamespace);
     }).get().reduce(function (result, readoutSrc) {
       return result + '/' + readoutSrc;
     });
-    $.get(readoutSrc, function (data) {
+    _jquery2.default.get(readoutSrc, function (data) {
       var converter = new _showdown.Converter();
       converter.setFlavor('github');
       var html = converter.makeHtml(data);
@@ -2876,7 +2888,7 @@ module.exports = function readout(opts) {
       }
     });
   });
-}; /* global $ */
+};
 //# sourceMappingURL=readout.js.map
 
 /***/ })
