@@ -7,7 +7,7 @@ This project is early in its development. The premise is that when it comes to w
 
 ## Installation
 
-Install readout via npm or markdown.
+Install readout via bower or npm.
 ```bash
 bower install readout-markdown
 ```
