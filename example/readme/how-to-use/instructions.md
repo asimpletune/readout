@@ -1,23 +1,3 @@
-# readout
-A tool for inserting markdown content into your site as HTML.
-
-This project is early in its development. The premise is that when it comes to writing actual content, you probably don't need anything besides markdown. As a huge fan of it, I'd like to be able to write all of my "word-stuff" in good ol' markdown, but insert it nicely into a page.
-
-**To see an example:** view a readout of this README on the [readout site](http://asimpletune.github.io/readout/).
-
-## Installation
-
-Install readout via bower or npm.
-```bash
-bower install readout-markdown
-```
-
-or
-
-```bash
-npm install readout-markdown
-```
-
 ## How to use
 
 1. Put dependencies into your html or template
@@ -58,10 +38,3 @@ npm install readout-markdown
       });
     </script>
     ```
-
-## Options
-
-The constructor accepts the following options:
-
-* `namespace`: You can specify your own custom namespace, instead of `data-readout-src`, but it must follow the string pattern `data-\*`
-* `calllback: function(el, html)`: You can add a callback that accepts `el` and `html` as parameters. By default `el` just gets assigned the resulting `html`.

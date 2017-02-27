@@ -71,6 +71,50 @@ var Readout =
 /* 0 */
 /***/ (function(module, exports, __webpack_require__) {
 
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+/**
+ * opts {
+ *  each: fn(node),
+ *  leaf: fn(node),
+ *  sibling: fn(node),
+ *  parent: TODO
+ *   includeRoot: TODO
+ * }
+ */
+function traverse(tw, opts) {
+  function fn() {
+    if (!tw.currentNode.isEqualNode(tw.root)) {
+      opts.each(tw.currentNode);
+    }
+    if (tw.firstChild()) {
+      fn();
+    } else {
+      opts.leaf(tw.currentNode);
+    }
+    opts.sibling(tw.currentNode);
+    if (tw.nextSibling()) {
+      fn();
+    } else {
+      tw.parentNode();
+      return;
+    }
+  }
+
+  fn();
+}
+
+exports.default = traverse;
+//# sourceMappingURL=traverse.js.map
+
+/***/ }),
+/* 1 */
+/***/ (function(module, exports, __webpack_require__) {
+
 var __WEBPACK_AMD_DEFINE_RESULT__;;/*! showdown 06-02-2017 */
 (function(){
 /**
@@ -2847,48 +2891,67 @@ if (typeof module !== 'undefined' && module.exports) {
 
 
 /***/ }),
-/* 1 */
-/***/ (function(module, exports) {
-
-module.exports = jQuery;
-
-/***/ }),
 /* 2 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
 
 
-var _jquery = __webpack_require__(1);
+var _showdown = __webpack_require__(1);
 
-var _jquery2 = _interopRequireDefault(_jquery);
+var _traverse = __webpack_require__(0);
 
-var _showdown = __webpack_require__(0);
+var _traverse2 = _interopRequireDefault(_traverse);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-module.exports = function readout(opts) {
-  opts = opts || {};
-  var readoutNamespace = opts.namespace || 'data-readout-src';
-  var readoutSelector = '[' + readoutNamespace + ']';
-  (0, _jquery2.default)(readoutSelector + ':not(:has(>' + readoutSelector + '))').each(function (i, el) {
-    var readoutSrc = (0, _jquery2.default)(el).parents(readoutSelector).andSelf().map(function (i, parent) {
-      return parent.getAttribute(readoutNamespace);
-    }).get().reduce(function (result, readoutSrc) {
-      return result + '/' + readoutSrc;
-    });
-    _jquery2.default.get(readoutSrc, function (data) {
-      var converter = new _showdown.Converter();
-      converter.setFlavor('github');
-      var html = converter.makeHtml(data);
-      if (opts.callback) {
-        opts.callback(el, html);
-      } else {
-        el.innerHTML = html;
-      }
-    });
+/* global NodeFilter, XMLHttpRequest */
+module.exports = function readout() {
+  var readoutNS = 'data-readout-src';
+  var root = document.documentElement;
+  var treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+    acceptNode: function acceptNode(node) {
+      return node.hasAttribute(readoutNS) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    }
   });
+  var converter = new _showdown.Converter();
+  converter.setFlavor('github');
+  var currentPath = [];
+  var anchor = document.createElement('a');
+  var traverseOpts = {
+    each: function each(node) {
+      currentPath.push(node.getAttribute(readoutNS));
+    },
+    leaf: function leaf(node) {
+      anchor.href = currentPath.reduce(function (result, el) {
+        return result + '/' + el;
+      });
+      get(anchor.href, function (data) {
+        var html = converter.makeHtml(data);
+        node.innerHTML = html;
+      });
+    },
+    sibling: function sibling() {
+      currentPath.pop();
+    }
+  };
+  (0, _traverse2.default)(treeWalker, traverseOpts);
 };
+
+/**
+ * url
+ * callback (httpReponseText)
+ */
+function get(url, callback) {
+  var httpRequest = new XMLHttpRequest();
+  httpRequest.onreadystatechange = function () {
+    if (httpRequest.readyState === XMLHttpRequest.DONE && httpRequest.status === 200) {
+      callback(httpRequest.responseText);
+    }
+  };
+  httpRequest.open('GET', url, true);
+  httpRequest.send();
+}
 //# sourceMappingURL=readout.js.map
 
 /***/ })

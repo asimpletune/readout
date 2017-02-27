@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title></title>
+  </head>
+  <body>
+    <p>
+      This shouldn't be included
+    </p>
+    <ul>
+      <li>neither</li>
+      <li>should</li>
+      <li>this</li>
+    </ul>
+    <div class="R - depth 1 - left" path="readout">
+      <div class="r - depth 2 - left" path="node_modules"></div>
+      <div class="R - depth 2 - right" path="standard">
+        <div class="r - depth 3 - left" path="bin"></div>
+        <div class="r - depth 3 - right" path="docs"></div>
+      </div>
+    </div>
+    <div class="R - depth 1 - right" path="uselesscss">
+      <div class="r - depth 2 - left" path="node_modules">
+      </div>
+    </div>
+    <script src="/example/tree.js" charset="utf-8"></script>
+    <script charset="utf-8">
+      window.onload = function() {
+        Readout()
+      }
+    </script>
+  </body>
+</html>
