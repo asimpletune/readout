@@ -1,15 +1,15 @@
 /* global NodeFilter, XMLHttpRequest */
-import { Converter } from 'showdown'
 import Traverse from './traverse'
+import { Parser, HtmlRenderer } from 'commonmark'
 
 module.exports = function readout () {
   let readoutNS = 'data-readout-src'
   let root = document.documentElement
+  let reader = new Parser()
+  let writer = new HtmlRenderer()
   let treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
     acceptNode: node => node.hasAttribute(readoutNS) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
   })
-  let converter = new Converter()
-  converter.setFlavor('github')
   let currentPath = []
   let anchor = document.createElement('a')
   let traverseOpts = {
@@ -19,8 +19,7 @@ module.exports = function readout () {
     leaf (node) {
       anchor.href = currentPath.reduce((result, el) => result + '/' + el)
       get(anchor.href, (data) => {
-        let html = converter.makeHtml(data)
-        node.innerHTML = html
+        node.innerHTML = writer.render(reader.parse(data))
       })
     },
     sibling () {

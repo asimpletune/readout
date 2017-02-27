@@ -64,7 +64,7 @@ var Readout =
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 2);
+/******/ 	return __webpack_require__(__webpack_require__.s = 22);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -74,10 +74,2576 @@ var Readout =
 "use strict";
 
 
-Object.defineProperty(exports, "__esModule", {
-  value: true
+var encode = __webpack_require__(20);
+var decode = __webpack_require__(19);
+
+var C_BACKSLASH = 92;
+
+var decodeHTML = __webpack_require__(2).decodeHTML;
+
+var ENTITY = "&(?:#x[a-f0-9]{1,8}|#[0-9]{1,8}|[a-z][a-z0-9]{1,31});";
+
+var TAGNAME = '[A-Za-z][A-Za-z0-9-]*';
+var ATTRIBUTENAME = '[a-zA-Z_:][a-zA-Z0-9:._-]*';
+var UNQUOTEDVALUE = "[^\"'=<>`\\x00-\\x20]+";
+var SINGLEQUOTEDVALUE = "'[^']*'";
+var DOUBLEQUOTEDVALUE = '"[^"]*"';
+var ATTRIBUTEVALUE = "(?:" + UNQUOTEDVALUE + "|" + SINGLEQUOTEDVALUE + "|" + DOUBLEQUOTEDVALUE + ")";
+var ATTRIBUTEVALUESPEC = "(?:" + "\\s*=" + "\\s*" + ATTRIBUTEVALUE + ")";
+var ATTRIBUTE = "(?:" + "\\s+" + ATTRIBUTENAME + ATTRIBUTEVALUESPEC + "?)";
+var OPENTAG = "<" + TAGNAME + ATTRIBUTE + "*" + "\\s*/?>";
+var CLOSETAG = "</" + TAGNAME + "\\s*[>]";
+var HTMLCOMMENT = "<!---->|<!--(?:-?[^>-])(?:-?[^-])*-->";
+var PROCESSINGINSTRUCTION = "[<][?].*?[?][>]";
+var DECLARATION = "<![A-Z]+" + "\\s+[^>]*>";
+var CDATA = "<!\\[CDATA\\[[\\s\\S]*?\\]\\]>";
+var HTMLTAG = "(?:" + OPENTAG + "|" + CLOSETAG + "|" + HTMLCOMMENT + "|" +
+        PROCESSINGINSTRUCTION + "|" + DECLARATION + "|" + CDATA + ")";
+var reHtmlTag = new RegExp('^' + HTMLTAG, 'i');
+
+var reBackslashOrAmp = /[\\&]/;
+
+var ESCAPABLE = '[!"#$%&\'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]';
+
+var reEntityOrEscapedChar = new RegExp('\\\\' + ESCAPABLE + '|' + ENTITY, 'gi');
+
+var XMLSPECIAL = '[&<>"]';
+
+var reXmlSpecial = new RegExp(XMLSPECIAL, 'g');
+
+var reXmlSpecialOrEntity = new RegExp(ENTITY + '|' + XMLSPECIAL, 'gi');
+
+var unescapeChar = function(s) {
+    if (s.charCodeAt(0) === C_BACKSLASH) {
+        return s.charAt(1);
+    } else {
+        return decodeHTML(s);
+    }
+};
+
+// Replace entities and backslash escapes with literal characters.
+var unescapeString = function(s) {
+    if (reBackslashOrAmp.test(s)) {
+        return s.replace(reEntityOrEscapedChar, unescapeChar);
+    } else {
+        return s;
+    }
+};
+
+var normalizeURI = function(uri) {
+    try {
+        return encode(decode(uri));
+    }
+    catch(err) {
+        return uri;
+    }
+};
+
+var replaceUnsafeChar = function(s) {
+    switch (s) {
+    case '&':
+        return '&amp;';
+    case '<':
+        return '&lt;';
+    case '>':
+        return '&gt;';
+    case '"':
+        return '&quot;';
+    default:
+        return s;
+    }
+};
+
+var escapeXml = function(s, preserve_entities) {
+    if (reXmlSpecial.test(s)) {
+        if (preserve_entities) {
+            return s.replace(reXmlSpecialOrEntity, replaceUnsafeChar);
+        } else {
+            return s.replace(reXmlSpecial, replaceUnsafeChar);
+        }
+    } else {
+        return s;
+    }
+};
+
+module.exports = { unescapeString: unescapeString,
+                   normalizeURI: normalizeURI,
+                   escapeXml: escapeXml,
+                   reHtmlTag: reHtmlTag,
+                   OPENTAG: OPENTAG,
+                   CLOSETAG: CLOSETAG,
+                   ENTITY: ENTITY,
+                   ESCAPABLE: ESCAPABLE
+                 };
+
+
+/***/ }),
+/* 1 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function isContainer(node) {
+    switch (node._type) {
+    case 'document':
+    case 'block_quote':
+    case 'list':
+    case 'item':
+    case 'paragraph':
+    case 'heading':
+    case 'emph':
+    case 'strong':
+    case 'link':
+    case 'image':
+    case 'custom_inline':
+    case 'custom_block':
+        return true;
+    default:
+        return false;
+    }
+}
+
+var resumeAt = function(node, entering) {
+    this.current = node;
+    this.entering = (entering === true);
+};
+
+var next = function(){
+    var cur = this.current;
+    var entering = this.entering;
+
+    if (cur === null) {
+        return null;
+    }
+
+    var container = isContainer(cur);
+
+    if (entering && container) {
+        if (cur._firstChild) {
+            this.current = cur._firstChild;
+            this.entering = true;
+        } else {
+            // stay on node but exit
+            this.entering = false;
+        }
+
+    } else if (cur === this.root) {
+        this.current = null;
+
+    } else if (cur._next === null) {
+        this.current = cur._parent;
+        this.entering = false;
+
+    } else {
+        this.current = cur._next;
+        this.entering = true;
+    }
+
+    return {entering: entering, node: cur};
+};
+
+var NodeWalker = function(root) {
+    return { current: root,
+             root: root,
+             entering: true,
+             next: next,
+             resumeAt: resumeAt };
+};
+
+var Node = function(nodeType, sourcepos) {
+    this._type = nodeType;
+    this._parent = null;
+    this._firstChild = null;
+    this._lastChild = null;
+    this._prev = null;
+    this._next = null;
+    this._sourcepos = sourcepos;
+    this._lastLineBlank = false;
+    this._open = true;
+    this._string_content = null;
+    this._literal = null;
+    this._listData = {};
+    this._info = null;
+    this._destination = null;
+    this._title = null;
+    this._isFenced = false;
+    this._fenceChar = null;
+    this._fenceLength = 0;
+    this._fenceOffset = null;
+    this._level = null;
+    this._onEnter = null;
+    this._onExit = null;
+};
+
+var proto = Node.prototype;
+
+Object.defineProperty(proto, 'isContainer', {
+    get: function () { return isContainer(this); }
 });
-/**
+
+Object.defineProperty(proto, 'type', {
+    get: function() { return this._type; }
+});
+
+Object.defineProperty(proto, 'firstChild', {
+    get: function() { return this._firstChild; }
+});
+
+Object.defineProperty(proto, 'lastChild', {
+    get: function() { return this._lastChild; }
+});
+
+Object.defineProperty(proto, 'next', {
+    get: function() { return this._next; }
+});
+
+Object.defineProperty(proto, 'prev', {
+    get: function() { return this._prev; }
+});
+
+Object.defineProperty(proto, 'parent', {
+    get: function() { return this._parent; }
+});
+
+Object.defineProperty(proto, 'sourcepos', {
+    get: function() { return this._sourcepos; }
+});
+
+Object.defineProperty(proto, 'literal', {
+    get: function() { return this._literal; },
+    set: function(s) { this._literal = s; }
+});
+
+Object.defineProperty(proto, 'destination', {
+    get: function() { return this._destination; },
+    set: function(s) { this._destination = s; }
+});
+
+Object.defineProperty(proto, 'title', {
+    get: function() { return this._title; },
+    set: function(s) { this._title = s; }
+});
+
+Object.defineProperty(proto, 'info', {
+    get: function() { return this._info; },
+    set: function(s) { this._info = s; }
+});
+
+Object.defineProperty(proto, 'level', {
+    get: function() { return this._level; },
+    set: function(s) { this._level = s; }
+});
+
+Object.defineProperty(proto, 'listType', {
+    get: function() { return this._listData.type; },
+    set: function(t) { this._listData.type = t; }
+});
+
+Object.defineProperty(proto, 'listTight', {
+    get: function() { return this._listData.tight; },
+    set: function(t) { this._listData.tight = t; }
+});
+
+Object.defineProperty(proto, 'listStart', {
+    get: function() { return this._listData.start; },
+    set: function(n) { this._listData.start = n; }
+});
+
+Object.defineProperty(proto, 'listDelimiter', {
+    get: function() { return this._listData.delimiter; },
+    set: function(delim) { this._listData.delimiter = delim; }
+});
+
+Object.defineProperty(proto, 'onEnter', {
+    get: function() { return this._onEnter; },
+    set: function(s) { this._onEnter = s; }
+});
+
+Object.defineProperty(proto, 'onExit', {
+    get: function() { return this._onExit; },
+    set: function(s) { this._onExit = s; }
+});
+
+Node.prototype.appendChild = function(child) {
+    child.unlink();
+    child._parent = this;
+    if (this._lastChild) {
+        this._lastChild._next = child;
+        child._prev = this._lastChild;
+        this._lastChild = child;
+    } else {
+        this._firstChild = child;
+        this._lastChild = child;
+    }
+};
+
+Node.prototype.prependChild = function(child) {
+    child.unlink();
+    child._parent = this;
+    if (this._firstChild) {
+        this._firstChild._prev = child;
+        child._next = this._firstChild;
+        this._firstChild = child;
+    } else {
+        this._firstChild = child;
+        this._lastChild = child;
+    }
+};
+
+Node.prototype.unlink = function() {
+    if (this._prev) {
+        this._prev._next = this._next;
+    } else if (this._parent) {
+        this._parent._firstChild = this._next;
+    }
+    if (this._next) {
+        this._next._prev = this._prev;
+    } else if (this._parent) {
+        this._parent._lastChild = this._prev;
+    }
+    this._parent = null;
+    this._next = null;
+    this._prev = null;
+};
+
+Node.prototype.insertAfter = function(sibling) {
+    sibling.unlink();
+    sibling._next = this._next;
+    if (sibling._next) {
+        sibling._next._prev = sibling;
+    }
+    sibling._prev = this;
+    this._next = sibling;
+    sibling._parent = this._parent;
+    if (!sibling._next) {
+        sibling._parent._lastChild = sibling;
+    }
+};
+
+Node.prototype.insertBefore = function(sibling) {
+    sibling.unlink();
+    sibling._prev = this._prev;
+    if (sibling._prev) {
+        sibling._prev._next = sibling;
+    }
+    sibling._next = this;
+    this._prev = sibling;
+    sibling._parent = this._parent;
+    if (!sibling._prev) {
+        sibling._parent._firstChild = sibling;
+    }
+};
+
+Node.prototype.walker = function() {
+    var walker = new NodeWalker(this);
+    return walker;
+};
+
+module.exports = Node;
+
+
+/* Example of use of walker:
+
+ var walker = w.walker();
+ var event;
+
+ while (event = walker.next()) {
+ console.log(event.entering, event.node.type);
+ }
+
+ */
+
+
+/***/ }),
+/* 2 */
+/***/ (function(module, exports, __webpack_require__) {
+
+var encode = __webpack_require__(16),
+    decode = __webpack_require__(14);
+
+exports.decode = function(data, level){
+	return (!level || level <= 0 ? decode.XML : decode.HTML)(data);
+};
+
+exports.decodeStrict = function(data, level){
+	return (!level || level <= 0 ? decode.XML : decode.HTMLStrict)(data);
+};
+
+exports.encode = function(data, level){
+	return (!level || level <= 0 ? encode.XML : encode.HTML)(data);
+};
+
+exports.encodeXML = encode.XML;
+
+exports.encodeHTML4 =
+exports.encodeHTML5 =
+exports.encodeHTML  = encode.HTML;
+
+exports.decodeXML =
+exports.decodeXMLStrict = decode.XML;
+
+exports.decodeHTML4 =
+exports.decodeHTML5 =
+exports.decodeHTML = decode.HTML;
+
+exports.decodeHTML4Strict =
+exports.decodeHTML5Strict =
+exports.decodeHTMLStrict = decode.HTMLStrict;
+
+exports.escape = encode.escape;
+
+
+/***/ }),
+/* 3 */
+/***/ (function(module, exports) {
+
+module.exports = {
+	"Aacute": "Á",
+	"aacute": "á",
+	"Abreve": "Ă",
+	"abreve": "ă",
+	"ac": "∾",
+	"acd": "∿",
+	"acE": "∾̳",
+	"Acirc": "Â",
+	"acirc": "â",
+	"acute": "´",
+	"Acy": "А",
+	"acy": "а",
+	"AElig": "Æ",
+	"aelig": "æ",
+	"af": "⁡",
+	"Afr": "𝔄",
+	"afr": "𝔞",
+	"Agrave": "À",
+	"agrave": "à",
+	"alefsym": "ℵ",
+	"aleph": "ℵ",
+	"Alpha": "Α",
+	"alpha": "α",
+	"Amacr": "Ā",
+	"amacr": "ā",
+	"amalg": "⨿",
+	"amp": "&",
+	"AMP": "&",
+	"andand": "⩕",
+	"And": "⩓",
+	"and": "∧",
+	"andd": "⩜",
+	"andslope": "⩘",
+	"andv": "⩚",
+	"ang": "∠",
+	"ange": "⦤",
+	"angle": "∠",
+	"angmsdaa": "⦨",
+	"angmsdab": "⦩",
+	"angmsdac": "⦪",
+	"angmsdad": "⦫",
+	"angmsdae": "⦬",
+	"angmsdaf": "⦭",
+	"angmsdag": "⦮",
+	"angmsdah": "⦯",
+	"angmsd": "∡",
+	"angrt": "∟",
+	"angrtvb": "⊾",
+	"angrtvbd": "⦝",
+	"angsph": "∢",
+	"angst": "Å",
+	"angzarr": "⍼",
+	"Aogon": "Ą",
+	"aogon": "ą",
+	"Aopf": "𝔸",
+	"aopf": "𝕒",
+	"apacir": "⩯",
+	"ap": "≈",
+	"apE": "⩰",
+	"ape": "≊",
+	"apid": "≋",
+	"apos": "'",
+	"ApplyFunction": "⁡",
+	"approx": "≈",
+	"approxeq": "≊",
+	"Aring": "Å",
+	"aring": "å",
+	"Ascr": "𝒜",
+	"ascr": "𝒶",
+	"Assign": "≔",
+	"ast": "*",
+	"asymp": "≈",
+	"asympeq": "≍",
+	"Atilde": "Ã",
+	"atilde": "ã",
+	"Auml": "Ä",
+	"auml": "ä",
+	"awconint": "∳",
+	"awint": "⨑",
+	"backcong": "≌",
+	"backepsilon": "϶",
+	"backprime": "‵",
+	"backsim": "∽",
+	"backsimeq": "⋍",
+	"Backslash": "∖",
+	"Barv": "⫧",
+	"barvee": "⊽",
+	"barwed": "⌅",
+	"Barwed": "⌆",
+	"barwedge": "⌅",
+	"bbrk": "⎵",
+	"bbrktbrk": "⎶",
+	"bcong": "≌",
+	"Bcy": "Б",
+	"bcy": "б",
+	"bdquo": "„",
+	"becaus": "∵",
+	"because": "∵",
+	"Because": "∵",
+	"bemptyv": "⦰",
+	"bepsi": "϶",
+	"bernou": "ℬ",
+	"Bernoullis": "ℬ",
+	"Beta": "Β",
+	"beta": "β",
+	"beth": "ℶ",
+	"between": "≬",
+	"Bfr": "𝔅",
+	"bfr": "𝔟",
+	"bigcap": "⋂",
+	"bigcirc": "◯",
+	"bigcup": "⋃",
+	"bigodot": "⨀",
+	"bigoplus": "⨁",
+	"bigotimes": "⨂",
+	"bigsqcup": "⨆",
+	"bigstar": "★",
+	"bigtriangledown": "▽",
+	"bigtriangleup": "△",
+	"biguplus": "⨄",
+	"bigvee": "⋁",
+	"bigwedge": "⋀",
+	"bkarow": "⤍",
+	"blacklozenge": "⧫",
+	"blacksquare": "▪",
+	"blacktriangle": "▴",
+	"blacktriangledown": "▾",
+	"blacktriangleleft": "◂",
+	"blacktriangleright": "▸",
+	"blank": "␣",
+	"blk12": "▒",
+	"blk14": "░",
+	"blk34": "▓",
+	"block": "█",
+	"bne": "=⃥",
+	"bnequiv": "≡⃥",
+	"bNot": "⫭",
+	"bnot": "⌐",
+	"Bopf": "𝔹",
+	"bopf": "𝕓",
+	"bot": "⊥",
+	"bottom": "⊥",
+	"bowtie": "⋈",
+	"boxbox": "⧉",
+	"boxdl": "┐",
+	"boxdL": "╕",
+	"boxDl": "╖",
+	"boxDL": "╗",
+	"boxdr": "┌",
+	"boxdR": "╒",
+	"boxDr": "╓",
+	"boxDR": "╔",
+	"boxh": "─",
+	"boxH": "═",
+	"boxhd": "┬",
+	"boxHd": "╤",
+	"boxhD": "╥",
+	"boxHD": "╦",
+	"boxhu": "┴",
+	"boxHu": "╧",
+	"boxhU": "╨",
+	"boxHU": "╩",
+	"boxminus": "⊟",
+	"boxplus": "⊞",
+	"boxtimes": "⊠",
+	"boxul": "┘",
+	"boxuL": "╛",
+	"boxUl": "╜",
+	"boxUL": "╝",
+	"boxur": "└",
+	"boxuR": "╘",
+	"boxUr": "╙",
+	"boxUR": "╚",
+	"boxv": "│",
+	"boxV": "║",
+	"boxvh": "┼",
+	"boxvH": "╪",
+	"boxVh": "╫",
+	"boxVH": "╬",
+	"boxvl": "┤",
+	"boxvL": "╡",
+	"boxVl": "╢",
+	"boxVL": "╣",
+	"boxvr": "├",
+	"boxvR": "╞",
+	"boxVr": "╟",
+	"boxVR": "╠",
+	"bprime": "‵",
+	"breve": "˘",
+	"Breve": "˘",
+	"brvbar": "¦",
+	"bscr": "𝒷",
+	"Bscr": "ℬ",
+	"bsemi": "⁏",
+	"bsim": "∽",
+	"bsime": "⋍",
+	"bsolb": "⧅",
+	"bsol": "\\",
+	"bsolhsub": "⟈",
+	"bull": "•",
+	"bullet": "•",
+	"bump": "≎",
+	"bumpE": "⪮",
+	"bumpe": "≏",
+	"Bumpeq": "≎",
+	"bumpeq": "≏",
+	"Cacute": "Ć",
+	"cacute": "ć",
+	"capand": "⩄",
+	"capbrcup": "⩉",
+	"capcap": "⩋",
+	"cap": "∩",
+	"Cap": "⋒",
+	"capcup": "⩇",
+	"capdot": "⩀",
+	"CapitalDifferentialD": "ⅅ",
+	"caps": "∩︀",
+	"caret": "⁁",
+	"caron": "ˇ",
+	"Cayleys": "ℭ",
+	"ccaps": "⩍",
+	"Ccaron": "Č",
+	"ccaron": "č",
+	"Ccedil": "Ç",
+	"ccedil": "ç",
+	"Ccirc": "Ĉ",
+	"ccirc": "ĉ",
+	"Cconint": "∰",
+	"ccups": "⩌",
+	"ccupssm": "⩐",
+	"Cdot": "Ċ",
+	"cdot": "ċ",
+	"cedil": "¸",
+	"Cedilla": "¸",
+	"cemptyv": "⦲",
+	"cent": "¢",
+	"centerdot": "·",
+	"CenterDot": "·",
+	"cfr": "𝔠",
+	"Cfr": "ℭ",
+	"CHcy": "Ч",
+	"chcy": "ч",
+	"check": "✓",
+	"checkmark": "✓",
+	"Chi": "Χ",
+	"chi": "χ",
+	"circ": "ˆ",
+	"circeq": "≗",
+	"circlearrowleft": "↺",
+	"circlearrowright": "↻",
+	"circledast": "⊛",
+	"circledcirc": "⊚",
+	"circleddash": "⊝",
+	"CircleDot": "⊙",
+	"circledR": "®",
+	"circledS": "Ⓢ",
+	"CircleMinus": "⊖",
+	"CirclePlus": "⊕",
+	"CircleTimes": "⊗",
+	"cir": "○",
+	"cirE": "⧃",
+	"cire": "≗",
+	"cirfnint": "⨐",
+	"cirmid": "⫯",
+	"cirscir": "⧂",
+	"ClockwiseContourIntegral": "∲",
+	"CloseCurlyDoubleQuote": "”",
+	"CloseCurlyQuote": "’",
+	"clubs": "♣",
+	"clubsuit": "♣",
+	"colon": ":",
+	"Colon": "∷",
+	"Colone": "⩴",
+	"colone": "≔",
+	"coloneq": "≔",
+	"comma": ",",
+	"commat": "@",
+	"comp": "∁",
+	"compfn": "∘",
+	"complement": "∁",
+	"complexes": "ℂ",
+	"cong": "≅",
+	"congdot": "⩭",
+	"Congruent": "≡",
+	"conint": "∮",
+	"Conint": "∯",
+	"ContourIntegral": "∮",
+	"copf": "𝕔",
+	"Copf": "ℂ",
+	"coprod": "∐",
+	"Coproduct": "∐",
+	"copy": "©",
+	"COPY": "©",
+	"copysr": "℗",
+	"CounterClockwiseContourIntegral": "∳",
+	"crarr": "↵",
+	"cross": "✗",
+	"Cross": "⨯",
+	"Cscr": "𝒞",
+	"cscr": "𝒸",
+	"csub": "⫏",
+	"csube": "⫑",
+	"csup": "⫐",
+	"csupe": "⫒",
+	"ctdot": "⋯",
+	"cudarrl": "⤸",
+	"cudarrr": "⤵",
+	"cuepr": "⋞",
+	"cuesc": "⋟",
+	"cularr": "↶",
+	"cularrp": "⤽",
+	"cupbrcap": "⩈",
+	"cupcap": "⩆",
+	"CupCap": "≍",
+	"cup": "∪",
+	"Cup": "⋓",
+	"cupcup": "⩊",
+	"cupdot": "⊍",
+	"cupor": "⩅",
+	"cups": "∪︀",
+	"curarr": "↷",
+	"curarrm": "⤼",
+	"curlyeqprec": "⋞",
+	"curlyeqsucc": "⋟",
+	"curlyvee": "⋎",
+	"curlywedge": "⋏",
+	"curren": "¤",
+	"curvearrowleft": "↶",
+	"curvearrowright": "↷",
+	"cuvee": "⋎",
+	"cuwed": "⋏",
+	"cwconint": "∲",
+	"cwint": "∱",
+	"cylcty": "⌭",
+	"dagger": "†",
+	"Dagger": "‡",
+	"daleth": "ℸ",
+	"darr": "↓",
+	"Darr": "↡",
+	"dArr": "⇓",
+	"dash": "‐",
+	"Dashv": "⫤",
+	"dashv": "⊣",
+	"dbkarow": "⤏",
+	"dblac": "˝",
+	"Dcaron": "Ď",
+	"dcaron": "ď",
+	"Dcy": "Д",
+	"dcy": "д",
+	"ddagger": "‡",
+	"ddarr": "⇊",
+	"DD": "ⅅ",
+	"dd": "ⅆ",
+	"DDotrahd": "⤑",
+	"ddotseq": "⩷",
+	"deg": "°",
+	"Del": "∇",
+	"Delta": "Δ",
+	"delta": "δ",
+	"demptyv": "⦱",
+	"dfisht": "⥿",
+	"Dfr": "𝔇",
+	"dfr": "𝔡",
+	"dHar": "⥥",
+	"dharl": "⇃",
+	"dharr": "⇂",
+	"DiacriticalAcute": "´",
+	"DiacriticalDot": "˙",
+	"DiacriticalDoubleAcute": "˝",
+	"DiacriticalGrave": "`",
+	"DiacriticalTilde": "˜",
+	"diam": "⋄",
+	"diamond": "⋄",
+	"Diamond": "⋄",
+	"diamondsuit": "♦",
+	"diams": "♦",
+	"die": "¨",
+	"DifferentialD": "ⅆ",
+	"digamma": "ϝ",
+	"disin": "⋲",
+	"div": "÷",
+	"divide": "÷",
+	"divideontimes": "⋇",
+	"divonx": "⋇",
+	"DJcy": "Ђ",
+	"djcy": "ђ",
+	"dlcorn": "⌞",
+	"dlcrop": "⌍",
+	"dollar": "$",
+	"Dopf": "𝔻",
+	"dopf": "𝕕",
+	"Dot": "¨",
+	"dot": "˙",
+	"DotDot": "⃜",
+	"doteq": "≐",
+	"doteqdot": "≑",
+	"DotEqual": "≐",
+	"dotminus": "∸",
+	"dotplus": "∔",
+	"dotsquare": "⊡",
+	"doublebarwedge": "⌆",
+	"DoubleContourIntegral": "∯",
+	"DoubleDot": "¨",
+	"DoubleDownArrow": "⇓",
+	"DoubleLeftArrow": "⇐",
+	"DoubleLeftRightArrow": "⇔",
+	"DoubleLeftTee": "⫤",
+	"DoubleLongLeftArrow": "⟸",
+	"DoubleLongLeftRightArrow": "⟺",
+	"DoubleLongRightArrow": "⟹",
+	"DoubleRightArrow": "⇒",
+	"DoubleRightTee": "⊨",
+	"DoubleUpArrow": "⇑",
+	"DoubleUpDownArrow": "⇕",
+	"DoubleVerticalBar": "∥",
+	"DownArrowBar": "⤓",
+	"downarrow": "↓",
+	"DownArrow": "↓",
+	"Downarrow": "⇓",
+	"DownArrowUpArrow": "⇵",
+	"DownBreve": "̑",
+	"downdownarrows": "⇊",
+	"downharpoonleft": "⇃",
+	"downharpoonright": "⇂",
+	"DownLeftRightVector": "⥐",
+	"DownLeftTeeVector": "⥞",
+	"DownLeftVectorBar": "⥖",
+	"DownLeftVector": "↽",
+	"DownRightTeeVector": "⥟",
+	"DownRightVectorBar": "⥗",
+	"DownRightVector": "⇁",
+	"DownTeeArrow": "↧",
+	"DownTee": "⊤",
+	"drbkarow": "⤐",
+	"drcorn": "⌟",
+	"drcrop": "⌌",
+	"Dscr": "𝒟",
+	"dscr": "𝒹",
+	"DScy": "Ѕ",
+	"dscy": "ѕ",
+	"dsol": "⧶",
+	"Dstrok": "Đ",
+	"dstrok": "đ",
+	"dtdot": "⋱",
+	"dtri": "▿",
+	"dtrif": "▾",
+	"duarr": "⇵",
+	"duhar": "⥯",
+	"dwangle": "⦦",
+	"DZcy": "Џ",
+	"dzcy": "џ",
+	"dzigrarr": "⟿",
+	"Eacute": "É",
+	"eacute": "é",
+	"easter": "⩮",
+	"Ecaron": "Ě",
+	"ecaron": "ě",
+	"Ecirc": "Ê",
+	"ecirc": "ê",
+	"ecir": "≖",
+	"ecolon": "≕",
+	"Ecy": "Э",
+	"ecy": "э",
+	"eDDot": "⩷",
+	"Edot": "Ė",
+	"edot": "ė",
+	"eDot": "≑",
+	"ee": "ⅇ",
+	"efDot": "≒",
+	"Efr": "𝔈",
+	"efr": "𝔢",
+	"eg": "⪚",
+	"Egrave": "È",
+	"egrave": "è",
+	"egs": "⪖",
+	"egsdot": "⪘",
+	"el": "⪙",
+	"Element": "∈",
+	"elinters": "⏧",
+	"ell": "ℓ",
+	"els": "⪕",
+	"elsdot": "⪗",
+	"Emacr": "Ē",
+	"emacr": "ē",
+	"empty": "∅",
+	"emptyset": "∅",
+	"EmptySmallSquare": "◻",
+	"emptyv": "∅",
+	"EmptyVerySmallSquare": "▫",
+	"emsp13": " ",
+	"emsp14": " ",
+	"emsp": " ",
+	"ENG": "Ŋ",
+	"eng": "ŋ",
+	"ensp": " ",
+	"Eogon": "Ę",
+	"eogon": "ę",
+	"Eopf": "𝔼",
+	"eopf": "𝕖",
+	"epar": "⋕",
+	"eparsl": "⧣",
+	"eplus": "⩱",
+	"epsi": "ε",
+	"Epsilon": "Ε",
+	"epsilon": "ε",
+	"epsiv": "ϵ",
+	"eqcirc": "≖",
+	"eqcolon": "≕",
+	"eqsim": "≂",
+	"eqslantgtr": "⪖",
+	"eqslantless": "⪕",
+	"Equal": "⩵",
+	"equals": "=",
+	"EqualTilde": "≂",
+	"equest": "≟",
+	"Equilibrium": "⇌",
+	"equiv": "≡",
+	"equivDD": "⩸",
+	"eqvparsl": "⧥",
+	"erarr": "⥱",
+	"erDot": "≓",
+	"escr": "ℯ",
+	"Escr": "ℰ",
+	"esdot": "≐",
+	"Esim": "⩳",
+	"esim": "≂",
+	"Eta": "Η",
+	"eta": "η",
+	"ETH": "Ð",
+	"eth": "ð",
+	"Euml": "Ë",
+	"euml": "ë",
+	"euro": "€",
+	"excl": "!",
+	"exist": "∃",
+	"Exists": "∃",
+	"expectation": "ℰ",
+	"exponentiale": "ⅇ",
+	"ExponentialE": "ⅇ",
+	"fallingdotseq": "≒",
+	"Fcy": "Ф",
+	"fcy": "ф",
+	"female": "♀",
+	"ffilig": "ﬃ",
+	"fflig": "ﬀ",
+	"ffllig": "ﬄ",
+	"Ffr": "𝔉",
+	"ffr": "𝔣",
+	"filig": "ﬁ",
+	"FilledSmallSquare": "◼",
+	"FilledVerySmallSquare": "▪",
+	"fjlig": "fj",
+	"flat": "♭",
+	"fllig": "ﬂ",
+	"fltns": "▱",
+	"fnof": "ƒ",
+	"Fopf": "𝔽",
+	"fopf": "𝕗",
+	"forall": "∀",
+	"ForAll": "∀",
+	"fork": "⋔",
+	"forkv": "⫙",
+	"Fouriertrf": "ℱ",
+	"fpartint": "⨍",
+	"frac12": "½",
+	"frac13": "⅓",
+	"frac14": "¼",
+	"frac15": "⅕",
+	"frac16": "⅙",
+	"frac18": "⅛",
+	"frac23": "⅔",
+	"frac25": "⅖",
+	"frac34": "¾",
+	"frac35": "⅗",
+	"frac38": "⅜",
+	"frac45": "⅘",
+	"frac56": "⅚",
+	"frac58": "⅝",
+	"frac78": "⅞",
+	"frasl": "⁄",
+	"frown": "⌢",
+	"fscr": "𝒻",
+	"Fscr": "ℱ",
+	"gacute": "ǵ",
+	"Gamma": "Γ",
+	"gamma": "γ",
+	"Gammad": "Ϝ",
+	"gammad": "ϝ",
+	"gap": "⪆",
+	"Gbreve": "Ğ",
+	"gbreve": "ğ",
+	"Gcedil": "Ģ",
+	"Gcirc": "Ĝ",
+	"gcirc": "ĝ",
+	"Gcy": "Г",
+	"gcy": "г",
+	"Gdot": "Ġ",
+	"gdot": "ġ",
+	"ge": "≥",
+	"gE": "≧",
+	"gEl": "⪌",
+	"gel": "⋛",
+	"geq": "≥",
+	"geqq": "≧",
+	"geqslant": "⩾",
+	"gescc": "⪩",
+	"ges": "⩾",
+	"gesdot": "⪀",
+	"gesdoto": "⪂",
+	"gesdotol": "⪄",
+	"gesl": "⋛︀",
+	"gesles": "⪔",
+	"Gfr": "𝔊",
+	"gfr": "𝔤",
+	"gg": "≫",
+	"Gg": "⋙",
+	"ggg": "⋙",
+	"gimel": "ℷ",
+	"GJcy": "Ѓ",
+	"gjcy": "ѓ",
+	"gla": "⪥",
+	"gl": "≷",
+	"glE": "⪒",
+	"glj": "⪤",
+	"gnap": "⪊",
+	"gnapprox": "⪊",
+	"gne": "⪈",
+	"gnE": "≩",
+	"gneq": "⪈",
+	"gneqq": "≩",
+	"gnsim": "⋧",
+	"Gopf": "𝔾",
+	"gopf": "𝕘",
+	"grave": "`",
+	"GreaterEqual": "≥",
+	"GreaterEqualLess": "⋛",
+	"GreaterFullEqual": "≧",
+	"GreaterGreater": "⪢",
+	"GreaterLess": "≷",
+	"GreaterSlantEqual": "⩾",
+	"GreaterTilde": "≳",
+	"Gscr": "𝒢",
+	"gscr": "ℊ",
+	"gsim": "≳",
+	"gsime": "⪎",
+	"gsiml": "⪐",
+	"gtcc": "⪧",
+	"gtcir": "⩺",
+	"gt": ">",
+	"GT": ">",
+	"Gt": "≫",
+	"gtdot": "⋗",
+	"gtlPar": "⦕",
+	"gtquest": "⩼",
+	"gtrapprox": "⪆",
+	"gtrarr": "⥸",
+	"gtrdot": "⋗",
+	"gtreqless": "⋛",
+	"gtreqqless": "⪌",
+	"gtrless": "≷",
+	"gtrsim": "≳",
+	"gvertneqq": "≩︀",
+	"gvnE": "≩︀",
+	"Hacek": "ˇ",
+	"hairsp": " ",
+	"half": "½",
+	"hamilt": "ℋ",
+	"HARDcy": "Ъ",
+	"hardcy": "ъ",
+	"harrcir": "⥈",
+	"harr": "↔",
+	"hArr": "⇔",
+	"harrw": "↭",
+	"Hat": "^",
+	"hbar": "ℏ",
+	"Hcirc": "Ĥ",
+	"hcirc": "ĥ",
+	"hearts": "♥",
+	"heartsuit": "♥",
+	"hellip": "…",
+	"hercon": "⊹",
+	"hfr": "𝔥",
+	"Hfr": "ℌ",
+	"HilbertSpace": "ℋ",
+	"hksearow": "⤥",
+	"hkswarow": "⤦",
+	"hoarr": "⇿",
+	"homtht": "∻",
+	"hookleftarrow": "↩",
+	"hookrightarrow": "↪",
+	"hopf": "𝕙",
+	"Hopf": "ℍ",
+	"horbar": "―",
+	"HorizontalLine": "─",
+	"hscr": "𝒽",
+	"Hscr": "ℋ",
+	"hslash": "ℏ",
+	"Hstrok": "Ħ",
+	"hstrok": "ħ",
+	"HumpDownHump": "≎",
+	"HumpEqual": "≏",
+	"hybull": "⁃",
+	"hyphen": "‐",
+	"Iacute": "Í",
+	"iacute": "í",
+	"ic": "⁣",
+	"Icirc": "Î",
+	"icirc": "î",
+	"Icy": "И",
+	"icy": "и",
+	"Idot": "İ",
+	"IEcy": "Е",
+	"iecy": "е",
+	"iexcl": "¡",
+	"iff": "⇔",
+	"ifr": "𝔦",
+	"Ifr": "ℑ",
+	"Igrave": "Ì",
+	"igrave": "ì",
+	"ii": "ⅈ",
+	"iiiint": "⨌",
+	"iiint": "∭",
+	"iinfin": "⧜",
+	"iiota": "℩",
+	"IJlig": "Ĳ",
+	"ijlig": "ĳ",
+	"Imacr": "Ī",
+	"imacr": "ī",
+	"image": "ℑ",
+	"ImaginaryI": "ⅈ",
+	"imagline": "ℐ",
+	"imagpart": "ℑ",
+	"imath": "ı",
+	"Im": "ℑ",
+	"imof": "⊷",
+	"imped": "Ƶ",
+	"Implies": "⇒",
+	"incare": "℅",
+	"in": "∈",
+	"infin": "∞",
+	"infintie": "⧝",
+	"inodot": "ı",
+	"intcal": "⊺",
+	"int": "∫",
+	"Int": "∬",
+	"integers": "ℤ",
+	"Integral": "∫",
+	"intercal": "⊺",
+	"Intersection": "⋂",
+	"intlarhk": "⨗",
+	"intprod": "⨼",
+	"InvisibleComma": "⁣",
+	"InvisibleTimes": "⁢",
+	"IOcy": "Ё",
+	"iocy": "ё",
+	"Iogon": "Į",
+	"iogon": "į",
+	"Iopf": "𝕀",
+	"iopf": "𝕚",
+	"Iota": "Ι",
+	"iota": "ι",
+	"iprod": "⨼",
+	"iquest": "¿",
+	"iscr": "𝒾",
+	"Iscr": "ℐ",
+	"isin": "∈",
+	"isindot": "⋵",
+	"isinE": "⋹",
+	"isins": "⋴",
+	"isinsv": "⋳",
+	"isinv": "∈",
+	"it": "⁢",
+	"Itilde": "Ĩ",
+	"itilde": "ĩ",
+	"Iukcy": "І",
+	"iukcy": "і",
+	"Iuml": "Ï",
+	"iuml": "ï",
+	"Jcirc": "Ĵ",
+	"jcirc": "ĵ",
+	"Jcy": "Й",
+	"jcy": "й",
+	"Jfr": "𝔍",
+	"jfr": "𝔧",
+	"jmath": "ȷ",
+	"Jopf": "𝕁",
+	"jopf": "𝕛",
+	"Jscr": "𝒥",
+	"jscr": "𝒿",
+	"Jsercy": "Ј",
+	"jsercy": "ј",
+	"Jukcy": "Є",
+	"jukcy": "є",
+	"Kappa": "Κ",
+	"kappa": "κ",
+	"kappav": "ϰ",
+	"Kcedil": "Ķ",
+	"kcedil": "ķ",
+	"Kcy": "К",
+	"kcy": "к",
+	"Kfr": "𝔎",
+	"kfr": "𝔨",
+	"kgreen": "ĸ",
+	"KHcy": "Х",
+	"khcy": "х",
+	"KJcy": "Ќ",
+	"kjcy": "ќ",
+	"Kopf": "𝕂",
+	"kopf": "𝕜",
+	"Kscr": "𝒦",
+	"kscr": "𝓀",
+	"lAarr": "⇚",
+	"Lacute": "Ĺ",
+	"lacute": "ĺ",
+	"laemptyv": "⦴",
+	"lagran": "ℒ",
+	"Lambda": "Λ",
+	"lambda": "λ",
+	"lang": "⟨",
+	"Lang": "⟪",
+	"langd": "⦑",
+	"langle": "⟨",
+	"lap": "⪅",
+	"Laplacetrf": "ℒ",
+	"laquo": "«",
+	"larrb": "⇤",
+	"larrbfs": "⤟",
+	"larr": "←",
+	"Larr": "↞",
+	"lArr": "⇐",
+	"larrfs": "⤝",
+	"larrhk": "↩",
+	"larrlp": "↫",
+	"larrpl": "⤹",
+	"larrsim": "⥳",
+	"larrtl": "↢",
+	"latail": "⤙",
+	"lAtail": "⤛",
+	"lat": "⪫",
+	"late": "⪭",
+	"lates": "⪭︀",
+	"lbarr": "⤌",
+	"lBarr": "⤎",
+	"lbbrk": "❲",
+	"lbrace": "{",
+	"lbrack": "[",
+	"lbrke": "⦋",
+	"lbrksld": "⦏",
+	"lbrkslu": "⦍",
+	"Lcaron": "Ľ",
+	"lcaron": "ľ",
+	"Lcedil": "Ļ",
+	"lcedil": "ļ",
+	"lceil": "⌈",
+	"lcub": "{",
+	"Lcy": "Л",
+	"lcy": "л",
+	"ldca": "⤶",
+	"ldquo": "“",
+	"ldquor": "„",
+	"ldrdhar": "⥧",
+	"ldrushar": "⥋",
+	"ldsh": "↲",
+	"le": "≤",
+	"lE": "≦",
+	"LeftAngleBracket": "⟨",
+	"LeftArrowBar": "⇤",
+	"leftarrow": "←",
+	"LeftArrow": "←",
+	"Leftarrow": "⇐",
+	"LeftArrowRightArrow": "⇆",
+	"leftarrowtail": "↢",
+	"LeftCeiling": "⌈",
+	"LeftDoubleBracket": "⟦",
+	"LeftDownTeeVector": "⥡",
+	"LeftDownVectorBar": "⥙",
+	"LeftDownVector": "⇃",
+	"LeftFloor": "⌊",
+	"leftharpoondown": "↽",
+	"leftharpoonup": "↼",
+	"leftleftarrows": "⇇",
+	"leftrightarrow": "↔",
+	"LeftRightArrow": "↔",
+	"Leftrightarrow": "⇔",
+	"leftrightarrows": "⇆",
+	"leftrightharpoons": "⇋",
+	"leftrightsquigarrow": "↭",
+	"LeftRightVector": "⥎",
+	"LeftTeeArrow": "↤",
+	"LeftTee": "⊣",
+	"LeftTeeVector": "⥚",
+	"leftthreetimes": "⋋",
+	"LeftTriangleBar": "⧏",
+	"LeftTriangle": "⊲",
+	"LeftTriangleEqual": "⊴",
+	"LeftUpDownVector": "⥑",
+	"LeftUpTeeVector": "⥠",
+	"LeftUpVectorBar": "⥘",
+	"LeftUpVector": "↿",
+	"LeftVectorBar": "⥒",
+	"LeftVector": "↼",
+	"lEg": "⪋",
+	"leg": "⋚",
+	"leq": "≤",
+	"leqq": "≦",
+	"leqslant": "⩽",
+	"lescc": "⪨",
+	"les": "⩽",
+	"lesdot": "⩿",
+	"lesdoto": "⪁",
+	"lesdotor": "⪃",
+	"lesg": "⋚︀",
+	"lesges": "⪓",
+	"lessapprox": "⪅",
+	"lessdot": "⋖",
+	"lesseqgtr": "⋚",
+	"lesseqqgtr": "⪋",
+	"LessEqualGreater": "⋚",
+	"LessFullEqual": "≦",
+	"LessGreater": "≶",
+	"lessgtr": "≶",
+	"LessLess": "⪡",
+	"lesssim": "≲",
+	"LessSlantEqual": "⩽",
+	"LessTilde": "≲",
+	"lfisht": "⥼",
+	"lfloor": "⌊",
+	"Lfr": "𝔏",
+	"lfr": "𝔩",
+	"lg": "≶",
+	"lgE": "⪑",
+	"lHar": "⥢",
+	"lhard": "↽",
+	"lharu": "↼",
+	"lharul": "⥪",
+	"lhblk": "▄",
+	"LJcy": "Љ",
+	"ljcy": "љ",
+	"llarr": "⇇",
+	"ll": "≪",
+	"Ll": "⋘",
+	"llcorner": "⌞",
+	"Lleftarrow": "⇚",
+	"llhard": "⥫",
+	"lltri": "◺",
+	"Lmidot": "Ŀ",
+	"lmidot": "ŀ",
+	"lmoustache": "⎰",
+	"lmoust": "⎰",
+	"lnap": "⪉",
+	"lnapprox": "⪉",
+	"lne": "⪇",
+	"lnE": "≨",
+	"lneq": "⪇",
+	"lneqq": "≨",
+	"lnsim": "⋦",
+	"loang": "⟬",
+	"loarr": "⇽",
+	"lobrk": "⟦",
+	"longleftarrow": "⟵",
+	"LongLeftArrow": "⟵",
+	"Longleftarrow": "⟸",
+	"longleftrightarrow": "⟷",
+	"LongLeftRightArrow": "⟷",
+	"Longleftrightarrow": "⟺",
+	"longmapsto": "⟼",
+	"longrightarrow": "⟶",
+	"LongRightArrow": "⟶",
+	"Longrightarrow": "⟹",
+	"looparrowleft": "↫",
+	"looparrowright": "↬",
+	"lopar": "⦅",
+	"Lopf": "𝕃",
+	"lopf": "𝕝",
+	"loplus": "⨭",
+	"lotimes": "⨴",
+	"lowast": "∗",
+	"lowbar": "_",
+	"LowerLeftArrow": "↙",
+	"LowerRightArrow": "↘",
+	"loz": "◊",
+	"lozenge": "◊",
+	"lozf": "⧫",
+	"lpar": "(",
+	"lparlt": "⦓",
+	"lrarr": "⇆",
+	"lrcorner": "⌟",
+	"lrhar": "⇋",
+	"lrhard": "⥭",
+	"lrm": "‎",
+	"lrtri": "⊿",
+	"lsaquo": "‹",
+	"lscr": "𝓁",
+	"Lscr": "ℒ",
+	"lsh": "↰",
+	"Lsh": "↰",
+	"lsim": "≲",
+	"lsime": "⪍",
+	"lsimg": "⪏",
+	"lsqb": "[",
+	"lsquo": "‘",
+	"lsquor": "‚",
+	"Lstrok": "Ł",
+	"lstrok": "ł",
+	"ltcc": "⪦",
+	"ltcir": "⩹",
+	"lt": "<",
+	"LT": "<",
+	"Lt": "≪",
+	"ltdot": "⋖",
+	"lthree": "⋋",
+	"ltimes": "⋉",
+	"ltlarr": "⥶",
+	"ltquest": "⩻",
+	"ltri": "◃",
+	"ltrie": "⊴",
+	"ltrif": "◂",
+	"ltrPar": "⦖",
+	"lurdshar": "⥊",
+	"luruhar": "⥦",
+	"lvertneqq": "≨︀",
+	"lvnE": "≨︀",
+	"macr": "¯",
+	"male": "♂",
+	"malt": "✠",
+	"maltese": "✠",
+	"Map": "⤅",
+	"map": "↦",
+	"mapsto": "↦",
+	"mapstodown": "↧",
+	"mapstoleft": "↤",
+	"mapstoup": "↥",
+	"marker": "▮",
+	"mcomma": "⨩",
+	"Mcy": "М",
+	"mcy": "м",
+	"mdash": "—",
+	"mDDot": "∺",
+	"measuredangle": "∡",
+	"MediumSpace": " ",
+	"Mellintrf": "ℳ",
+	"Mfr": "𝔐",
+	"mfr": "𝔪",
+	"mho": "℧",
+	"micro": "µ",
+	"midast": "*",
+	"midcir": "⫰",
+	"mid": "∣",
+	"middot": "·",
+	"minusb": "⊟",
+	"minus": "−",
+	"minusd": "∸",
+	"minusdu": "⨪",
+	"MinusPlus": "∓",
+	"mlcp": "⫛",
+	"mldr": "…",
+	"mnplus": "∓",
+	"models": "⊧",
+	"Mopf": "𝕄",
+	"mopf": "𝕞",
+	"mp": "∓",
+	"mscr": "𝓂",
+	"Mscr": "ℳ",
+	"mstpos": "∾",
+	"Mu": "Μ",
+	"mu": "μ",
+	"multimap": "⊸",
+	"mumap": "⊸",
+	"nabla": "∇",
+	"Nacute": "Ń",
+	"nacute": "ń",
+	"nang": "∠⃒",
+	"nap": "≉",
+	"napE": "⩰̸",
+	"napid": "≋̸",
+	"napos": "ŉ",
+	"napprox": "≉",
+	"natural": "♮",
+	"naturals": "ℕ",
+	"natur": "♮",
+	"nbsp": " ",
+	"nbump": "≎̸",
+	"nbumpe": "≏̸",
+	"ncap": "⩃",
+	"Ncaron": "Ň",
+	"ncaron": "ň",
+	"Ncedil": "Ņ",
+	"ncedil": "ņ",
+	"ncong": "≇",
+	"ncongdot": "⩭̸",
+	"ncup": "⩂",
+	"Ncy": "Н",
+	"ncy": "н",
+	"ndash": "–",
+	"nearhk": "⤤",
+	"nearr": "↗",
+	"neArr": "⇗",
+	"nearrow": "↗",
+	"ne": "≠",
+	"nedot": "≐̸",
+	"NegativeMediumSpace": "​",
+	"NegativeThickSpace": "​",
+	"NegativeThinSpace": "​",
+	"NegativeVeryThinSpace": "​",
+	"nequiv": "≢",
+	"nesear": "⤨",
+	"nesim": "≂̸",
+	"NestedGreaterGreater": "≫",
+	"NestedLessLess": "≪",
+	"NewLine": "\n",
+	"nexist": "∄",
+	"nexists": "∄",
+	"Nfr": "𝔑",
+	"nfr": "𝔫",
+	"ngE": "≧̸",
+	"nge": "≱",
+	"ngeq": "≱",
+	"ngeqq": "≧̸",
+	"ngeqslant": "⩾̸",
+	"nges": "⩾̸",
+	"nGg": "⋙̸",
+	"ngsim": "≵",
+	"nGt": "≫⃒",
+	"ngt": "≯",
+	"ngtr": "≯",
+	"nGtv": "≫̸",
+	"nharr": "↮",
+	"nhArr": "⇎",
+	"nhpar": "⫲",
+	"ni": "∋",
+	"nis": "⋼",
+	"nisd": "⋺",
+	"niv": "∋",
+	"NJcy": "Њ",
+	"njcy": "њ",
+	"nlarr": "↚",
+	"nlArr": "⇍",
+	"nldr": "‥",
+	"nlE": "≦̸",
+	"nle": "≰",
+	"nleftarrow": "↚",
+	"nLeftarrow": "⇍",
+	"nleftrightarrow": "↮",
+	"nLeftrightarrow": "⇎",
+	"nleq": "≰",
+	"nleqq": "≦̸",
+	"nleqslant": "⩽̸",
+	"nles": "⩽̸",
+	"nless": "≮",
+	"nLl": "⋘̸",
+	"nlsim": "≴",
+	"nLt": "≪⃒",
+	"nlt": "≮",
+	"nltri": "⋪",
+	"nltrie": "⋬",
+	"nLtv": "≪̸",
+	"nmid": "∤",
+	"NoBreak": "⁠",
+	"NonBreakingSpace": " ",
+	"nopf": "𝕟",
+	"Nopf": "ℕ",
+	"Not": "⫬",
+	"not": "¬",
+	"NotCongruent": "≢",
+	"NotCupCap": "≭",
+	"NotDoubleVerticalBar": "∦",
+	"NotElement": "∉",
+	"NotEqual": "≠",
+	"NotEqualTilde": "≂̸",
+	"NotExists": "∄",
+	"NotGreater": "≯",
+	"NotGreaterEqual": "≱",
+	"NotGreaterFullEqual": "≧̸",
+	"NotGreaterGreater": "≫̸",
+	"NotGreaterLess": "≹",
+	"NotGreaterSlantEqual": "⩾̸",
+	"NotGreaterTilde": "≵",
+	"NotHumpDownHump": "≎̸",
+	"NotHumpEqual": "≏̸",
+	"notin": "∉",
+	"notindot": "⋵̸",
+	"notinE": "⋹̸",
+	"notinva": "∉",
+	"notinvb": "⋷",
+	"notinvc": "⋶",
+	"NotLeftTriangleBar": "⧏̸",
+	"NotLeftTriangle": "⋪",
+	"NotLeftTriangleEqual": "⋬",
+	"NotLess": "≮",
+	"NotLessEqual": "≰",
+	"NotLessGreater": "≸",
+	"NotLessLess": "≪̸",
+	"NotLessSlantEqual": "⩽̸",
+	"NotLessTilde": "≴",
+	"NotNestedGreaterGreater": "⪢̸",
+	"NotNestedLessLess": "⪡̸",
+	"notni": "∌",
+	"notniva": "∌",
+	"notnivb": "⋾",
+	"notnivc": "⋽",
+	"NotPrecedes": "⊀",
+	"NotPrecedesEqual": "⪯̸",
+	"NotPrecedesSlantEqual": "⋠",
+	"NotReverseElement": "∌",
+	"NotRightTriangleBar": "⧐̸",
+	"NotRightTriangle": "⋫",
+	"NotRightTriangleEqual": "⋭",
+	"NotSquareSubset": "⊏̸",
+	"NotSquareSubsetEqual": "⋢",
+	"NotSquareSuperset": "⊐̸",
+	"NotSquareSupersetEqual": "⋣",
+	"NotSubset": "⊂⃒",
+	"NotSubsetEqual": "⊈",
+	"NotSucceeds": "⊁",
+	"NotSucceedsEqual": "⪰̸",
+	"NotSucceedsSlantEqual": "⋡",
+	"NotSucceedsTilde": "≿̸",
+	"NotSuperset": "⊃⃒",
+	"NotSupersetEqual": "⊉",
+	"NotTilde": "≁",
+	"NotTildeEqual": "≄",
+	"NotTildeFullEqual": "≇",
+	"NotTildeTilde": "≉",
+	"NotVerticalBar": "∤",
+	"nparallel": "∦",
+	"npar": "∦",
+	"nparsl": "⫽⃥",
+	"npart": "∂̸",
+	"npolint": "⨔",
+	"npr": "⊀",
+	"nprcue": "⋠",
+	"nprec": "⊀",
+	"npreceq": "⪯̸",
+	"npre": "⪯̸",
+	"nrarrc": "⤳̸",
+	"nrarr": "↛",
+	"nrArr": "⇏",
+	"nrarrw": "↝̸",
+	"nrightarrow": "↛",
+	"nRightarrow": "⇏",
+	"nrtri": "⋫",
+	"nrtrie": "⋭",
+	"nsc": "⊁",
+	"nsccue": "⋡",
+	"nsce": "⪰̸",
+	"Nscr": "𝒩",
+	"nscr": "𝓃",
+	"nshortmid": "∤",
+	"nshortparallel": "∦",
+	"nsim": "≁",
+	"nsime": "≄",
+	"nsimeq": "≄",
+	"nsmid": "∤",
+	"nspar": "∦",
+	"nsqsube": "⋢",
+	"nsqsupe": "⋣",
+	"nsub": "⊄",
+	"nsubE": "⫅̸",
+	"nsube": "⊈",
+	"nsubset": "⊂⃒",
+	"nsubseteq": "⊈",
+	"nsubseteqq": "⫅̸",
+	"nsucc": "⊁",
+	"nsucceq": "⪰̸",
+	"nsup": "⊅",
+	"nsupE": "⫆̸",
+	"nsupe": "⊉",
+	"nsupset": "⊃⃒",
+	"nsupseteq": "⊉",
+	"nsupseteqq": "⫆̸",
+	"ntgl": "≹",
+	"Ntilde": "Ñ",
+	"ntilde": "ñ",
+	"ntlg": "≸",
+	"ntriangleleft": "⋪",
+	"ntrianglelefteq": "⋬",
+	"ntriangleright": "⋫",
+	"ntrianglerighteq": "⋭",
+	"Nu": "Ν",
+	"nu": "ν",
+	"num": "#",
+	"numero": "№",
+	"numsp": " ",
+	"nvap": "≍⃒",
+	"nvdash": "⊬",
+	"nvDash": "⊭",
+	"nVdash": "⊮",
+	"nVDash": "⊯",
+	"nvge": "≥⃒",
+	"nvgt": ">⃒",
+	"nvHarr": "⤄",
+	"nvinfin": "⧞",
+	"nvlArr": "⤂",
+	"nvle": "≤⃒",
+	"nvlt": "<⃒",
+	"nvltrie": "⊴⃒",
+	"nvrArr": "⤃",
+	"nvrtrie": "⊵⃒",
+	"nvsim": "∼⃒",
+	"nwarhk": "⤣",
+	"nwarr": "↖",
+	"nwArr": "⇖",
+	"nwarrow": "↖",
+	"nwnear": "⤧",
+	"Oacute": "Ó",
+	"oacute": "ó",
+	"oast": "⊛",
+	"Ocirc": "Ô",
+	"ocirc": "ô",
+	"ocir": "⊚",
+	"Ocy": "О",
+	"ocy": "о",
+	"odash": "⊝",
+	"Odblac": "Ő",
+	"odblac": "ő",
+	"odiv": "⨸",
+	"odot": "⊙",
+	"odsold": "⦼",
+	"OElig": "Œ",
+	"oelig": "œ",
+	"ofcir": "⦿",
+	"Ofr": "𝔒",
+	"ofr": "𝔬",
+	"ogon": "˛",
+	"Ograve": "Ò",
+	"ograve": "ò",
+	"ogt": "⧁",
+	"ohbar": "⦵",
+	"ohm": "Ω",
+	"oint": "∮",
+	"olarr": "↺",
+	"olcir": "⦾",
+	"olcross": "⦻",
+	"oline": "‾",
+	"olt": "⧀",
+	"Omacr": "Ō",
+	"omacr": "ō",
+	"Omega": "Ω",
+	"omega": "ω",
+	"Omicron": "Ο",
+	"omicron": "ο",
+	"omid": "⦶",
+	"ominus": "⊖",
+	"Oopf": "𝕆",
+	"oopf": "𝕠",
+	"opar": "⦷",
+	"OpenCurlyDoubleQuote": "“",
+	"OpenCurlyQuote": "‘",
+	"operp": "⦹",
+	"oplus": "⊕",
+	"orarr": "↻",
+	"Or": "⩔",
+	"or": "∨",
+	"ord": "⩝",
+	"order": "ℴ",
+	"orderof": "ℴ",
+	"ordf": "ª",
+	"ordm": "º",
+	"origof": "⊶",
+	"oror": "⩖",
+	"orslope": "⩗",
+	"orv": "⩛",
+	"oS": "Ⓢ",
+	"Oscr": "𝒪",
+	"oscr": "ℴ",
+	"Oslash": "Ø",
+	"oslash": "ø",
+	"osol": "⊘",
+	"Otilde": "Õ",
+	"otilde": "õ",
+	"otimesas": "⨶",
+	"Otimes": "⨷",
+	"otimes": "⊗",
+	"Ouml": "Ö",
+	"ouml": "ö",
+	"ovbar": "⌽",
+	"OverBar": "‾",
+	"OverBrace": "⏞",
+	"OverBracket": "⎴",
+	"OverParenthesis": "⏜",
+	"para": "¶",
+	"parallel": "∥",
+	"par": "∥",
+	"parsim": "⫳",
+	"parsl": "⫽",
+	"part": "∂",
+	"PartialD": "∂",
+	"Pcy": "П",
+	"pcy": "п",
+	"percnt": "%",
+	"period": ".",
+	"permil": "‰",
+	"perp": "⊥",
+	"pertenk": "‱",
+	"Pfr": "𝔓",
+	"pfr": "𝔭",
+	"Phi": "Φ",
+	"phi": "φ",
+	"phiv": "ϕ",
+	"phmmat": "ℳ",
+	"phone": "☎",
+	"Pi": "Π",
+	"pi": "π",
+	"pitchfork": "⋔",
+	"piv": "ϖ",
+	"planck": "ℏ",
+	"planckh": "ℎ",
+	"plankv": "ℏ",
+	"plusacir": "⨣",
+	"plusb": "⊞",
+	"pluscir": "⨢",
+	"plus": "+",
+	"plusdo": "∔",
+	"plusdu": "⨥",
+	"pluse": "⩲",
+	"PlusMinus": "±",
+	"plusmn": "±",
+	"plussim": "⨦",
+	"plustwo": "⨧",
+	"pm": "±",
+	"Poincareplane": "ℌ",
+	"pointint": "⨕",
+	"popf": "𝕡",
+	"Popf": "ℙ",
+	"pound": "£",
+	"prap": "⪷",
+	"Pr": "⪻",
+	"pr": "≺",
+	"prcue": "≼",
+	"precapprox": "⪷",
+	"prec": "≺",
+	"preccurlyeq": "≼",
+	"Precedes": "≺",
+	"PrecedesEqual": "⪯",
+	"PrecedesSlantEqual": "≼",
+	"PrecedesTilde": "≾",
+	"preceq": "⪯",
+	"precnapprox": "⪹",
+	"precneqq": "⪵",
+	"precnsim": "⋨",
+	"pre": "⪯",
+	"prE": "⪳",
+	"precsim": "≾",
+	"prime": "′",
+	"Prime": "″",
+	"primes": "ℙ",
+	"prnap": "⪹",
+	"prnE": "⪵",
+	"prnsim": "⋨",
+	"prod": "∏",
+	"Product": "∏",
+	"profalar": "⌮",
+	"profline": "⌒",
+	"profsurf": "⌓",
+	"prop": "∝",
+	"Proportional": "∝",
+	"Proportion": "∷",
+	"propto": "∝",
+	"prsim": "≾",
+	"prurel": "⊰",
+	"Pscr": "𝒫",
+	"pscr": "𝓅",
+	"Psi": "Ψ",
+	"psi": "ψ",
+	"puncsp": " ",
+	"Qfr": "𝔔",
+	"qfr": "𝔮",
+	"qint": "⨌",
+	"qopf": "𝕢",
+	"Qopf": "ℚ",
+	"qprime": "⁗",
+	"Qscr": "𝒬",
+	"qscr": "𝓆",
+	"quaternions": "ℍ",
+	"quatint": "⨖",
+	"quest": "?",
+	"questeq": "≟",
+	"quot": "\"",
+	"QUOT": "\"",
+	"rAarr": "⇛",
+	"race": "∽̱",
+	"Racute": "Ŕ",
+	"racute": "ŕ",
+	"radic": "√",
+	"raemptyv": "⦳",
+	"rang": "⟩",
+	"Rang": "⟫",
+	"rangd": "⦒",
+	"range": "⦥",
+	"rangle": "⟩",
+	"raquo": "»",
+	"rarrap": "⥵",
+	"rarrb": "⇥",
+	"rarrbfs": "⤠",
+	"rarrc": "⤳",
+	"rarr": "→",
+	"Rarr": "↠",
+	"rArr": "⇒",
+	"rarrfs": "⤞",
+	"rarrhk": "↪",
+	"rarrlp": "↬",
+	"rarrpl": "⥅",
+	"rarrsim": "⥴",
+	"Rarrtl": "⤖",
+	"rarrtl": "↣",
+	"rarrw": "↝",
+	"ratail": "⤚",
+	"rAtail": "⤜",
+	"ratio": "∶",
+	"rationals": "ℚ",
+	"rbarr": "⤍",
+	"rBarr": "⤏",
+	"RBarr": "⤐",
+	"rbbrk": "❳",
+	"rbrace": "}",
+	"rbrack": "]",
+	"rbrke": "⦌",
+	"rbrksld": "⦎",
+	"rbrkslu": "⦐",
+	"Rcaron": "Ř",
+	"rcaron": "ř",
+	"Rcedil": "Ŗ",
+	"rcedil": "ŗ",
+	"rceil": "⌉",
+	"rcub": "}",
+	"Rcy": "Р",
+	"rcy": "р",
+	"rdca": "⤷",
+	"rdldhar": "⥩",
+	"rdquo": "”",
+	"rdquor": "”",
+	"rdsh": "↳",
+	"real": "ℜ",
+	"realine": "ℛ",
+	"realpart": "ℜ",
+	"reals": "ℝ",
+	"Re": "ℜ",
+	"rect": "▭",
+	"reg": "®",
+	"REG": "®",
+	"ReverseElement": "∋",
+	"ReverseEquilibrium": "⇋",
+	"ReverseUpEquilibrium": "⥯",
+	"rfisht": "⥽",
+	"rfloor": "⌋",
+	"rfr": "𝔯",
+	"Rfr": "ℜ",
+	"rHar": "⥤",
+	"rhard": "⇁",
+	"rharu": "⇀",
+	"rharul": "⥬",
+	"Rho": "Ρ",
+	"rho": "ρ",
+	"rhov": "ϱ",
+	"RightAngleBracket": "⟩",
+	"RightArrowBar": "⇥",
+	"rightarrow": "→",
+	"RightArrow": "→",
+	"Rightarrow": "⇒",
+	"RightArrowLeftArrow": "⇄",
+	"rightarrowtail": "↣",
+	"RightCeiling": "⌉",
+	"RightDoubleBracket": "⟧",
+	"RightDownTeeVector": "⥝",
+	"RightDownVectorBar": "⥕",
+	"RightDownVector": "⇂",
+	"RightFloor": "⌋",
+	"rightharpoondown": "⇁",
+	"rightharpoonup": "⇀",
+	"rightleftarrows": "⇄",
+	"rightleftharpoons": "⇌",
+	"rightrightarrows": "⇉",
+	"rightsquigarrow": "↝",
+	"RightTeeArrow": "↦",
+	"RightTee": "⊢",
+	"RightTeeVector": "⥛",
+	"rightthreetimes": "⋌",
+	"RightTriangleBar": "⧐",
+	"RightTriangle": "⊳",
+	"RightTriangleEqual": "⊵",
+	"RightUpDownVector": "⥏",
+	"RightUpTeeVector": "⥜",
+	"RightUpVectorBar": "⥔",
+	"RightUpVector": "↾",
+	"RightVectorBar": "⥓",
+	"RightVector": "⇀",
+	"ring": "˚",
+	"risingdotseq": "≓",
+	"rlarr": "⇄",
+	"rlhar": "⇌",
+	"rlm": "‏",
+	"rmoustache": "⎱",
+	"rmoust": "⎱",
+	"rnmid": "⫮",
+	"roang": "⟭",
+	"roarr": "⇾",
+	"robrk": "⟧",
+	"ropar": "⦆",
+	"ropf": "𝕣",
+	"Ropf": "ℝ",
+	"roplus": "⨮",
+	"rotimes": "⨵",
+	"RoundImplies": "⥰",
+	"rpar": ")",
+	"rpargt": "⦔",
+	"rppolint": "⨒",
+	"rrarr": "⇉",
+	"Rrightarrow": "⇛",
+	"rsaquo": "›",
+	"rscr": "𝓇",
+	"Rscr": "ℛ",
+	"rsh": "↱",
+	"Rsh": "↱",
+	"rsqb": "]",
+	"rsquo": "’",
+	"rsquor": "’",
+	"rthree": "⋌",
+	"rtimes": "⋊",
+	"rtri": "▹",
+	"rtrie": "⊵",
+	"rtrif": "▸",
+	"rtriltri": "⧎",
+	"RuleDelayed": "⧴",
+	"ruluhar": "⥨",
+	"rx": "℞",
+	"Sacute": "Ś",
+	"sacute": "ś",
+	"sbquo": "‚",
+	"scap": "⪸",
+	"Scaron": "Š",
+	"scaron": "š",
+	"Sc": "⪼",
+	"sc": "≻",
+	"sccue": "≽",
+	"sce": "⪰",
+	"scE": "⪴",
+	"Scedil": "Ş",
+	"scedil": "ş",
+	"Scirc": "Ŝ",
+	"scirc": "ŝ",
+	"scnap": "⪺",
+	"scnE": "⪶",
+	"scnsim": "⋩",
+	"scpolint": "⨓",
+	"scsim": "≿",
+	"Scy": "С",
+	"scy": "с",
+	"sdotb": "⊡",
+	"sdot": "⋅",
+	"sdote": "⩦",
+	"searhk": "⤥",
+	"searr": "↘",
+	"seArr": "⇘",
+	"searrow": "↘",
+	"sect": "§",
+	"semi": ";",
+	"seswar": "⤩",
+	"setminus": "∖",
+	"setmn": "∖",
+	"sext": "✶",
+	"Sfr": "𝔖",
+	"sfr": "𝔰",
+	"sfrown": "⌢",
+	"sharp": "♯",
+	"SHCHcy": "Щ",
+	"shchcy": "щ",
+	"SHcy": "Ш",
+	"shcy": "ш",
+	"ShortDownArrow": "↓",
+	"ShortLeftArrow": "←",
+	"shortmid": "∣",
+	"shortparallel": "∥",
+	"ShortRightArrow": "→",
+	"ShortUpArrow": "↑",
+	"shy": "­",
+	"Sigma": "Σ",
+	"sigma": "σ",
+	"sigmaf": "ς",
+	"sigmav": "ς",
+	"sim": "∼",
+	"simdot": "⩪",
+	"sime": "≃",
+	"simeq": "≃",
+	"simg": "⪞",
+	"simgE": "⪠",
+	"siml": "⪝",
+	"simlE": "⪟",
+	"simne": "≆",
+	"simplus": "⨤",
+	"simrarr": "⥲",
+	"slarr": "←",
+	"SmallCircle": "∘",
+	"smallsetminus": "∖",
+	"smashp": "⨳",
+	"smeparsl": "⧤",
+	"smid": "∣",
+	"smile": "⌣",
+	"smt": "⪪",
+	"smte": "⪬",
+	"smtes": "⪬︀",
+	"SOFTcy": "Ь",
+	"softcy": "ь",
+	"solbar": "⌿",
+	"solb": "⧄",
+	"sol": "/",
+	"Sopf": "𝕊",
+	"sopf": "𝕤",
+	"spades": "♠",
+	"spadesuit": "♠",
+	"spar": "∥",
+	"sqcap": "⊓",
+	"sqcaps": "⊓︀",
+	"sqcup": "⊔",
+	"sqcups": "⊔︀",
+	"Sqrt": "√",
+	"sqsub": "⊏",
+	"sqsube": "⊑",
+	"sqsubset": "⊏",
+	"sqsubseteq": "⊑",
+	"sqsup": "⊐",
+	"sqsupe": "⊒",
+	"sqsupset": "⊐",
+	"sqsupseteq": "⊒",
+	"square": "□",
+	"Square": "□",
+	"SquareIntersection": "⊓",
+	"SquareSubset": "⊏",
+	"SquareSubsetEqual": "⊑",
+	"SquareSuperset": "⊐",
+	"SquareSupersetEqual": "⊒",
+	"SquareUnion": "⊔",
+	"squarf": "▪",
+	"squ": "□",
+	"squf": "▪",
+	"srarr": "→",
+	"Sscr": "𝒮",
+	"sscr": "𝓈",
+	"ssetmn": "∖",
+	"ssmile": "⌣",
+	"sstarf": "⋆",
+	"Star": "⋆",
+	"star": "☆",
+	"starf": "★",
+	"straightepsilon": "ϵ",
+	"straightphi": "ϕ",
+	"strns": "¯",
+	"sub": "⊂",
+	"Sub": "⋐",
+	"subdot": "⪽",
+	"subE": "⫅",
+	"sube": "⊆",
+	"subedot": "⫃",
+	"submult": "⫁",
+	"subnE": "⫋",
+	"subne": "⊊",
+	"subplus": "⪿",
+	"subrarr": "⥹",
+	"subset": "⊂",
+	"Subset": "⋐",
+	"subseteq": "⊆",
+	"subseteqq": "⫅",
+	"SubsetEqual": "⊆",
+	"subsetneq": "⊊",
+	"subsetneqq": "⫋",
+	"subsim": "⫇",
+	"subsub": "⫕",
+	"subsup": "⫓",
+	"succapprox": "⪸",
+	"succ": "≻",
+	"succcurlyeq": "≽",
+	"Succeeds": "≻",
+	"SucceedsEqual": "⪰",
+	"SucceedsSlantEqual": "≽",
+	"SucceedsTilde": "≿",
+	"succeq": "⪰",
+	"succnapprox": "⪺",
+	"succneqq": "⪶",
+	"succnsim": "⋩",
+	"succsim": "≿",
+	"SuchThat": "∋",
+	"sum": "∑",
+	"Sum": "∑",
+	"sung": "♪",
+	"sup1": "¹",
+	"sup2": "²",
+	"sup3": "³",
+	"sup": "⊃",
+	"Sup": "⋑",
+	"supdot": "⪾",
+	"supdsub": "⫘",
+	"supE": "⫆",
+	"supe": "⊇",
+	"supedot": "⫄",
+	"Superset": "⊃",
+	"SupersetEqual": "⊇",
+	"suphsol": "⟉",
+	"suphsub": "⫗",
+	"suplarr": "⥻",
+	"supmult": "⫂",
+	"supnE": "⫌",
+	"supne": "⊋",
+	"supplus": "⫀",
+	"supset": "⊃",
+	"Supset": "⋑",
+	"supseteq": "⊇",
+	"supseteqq": "⫆",
+	"supsetneq": "⊋",
+	"supsetneqq": "⫌",
+	"supsim": "⫈",
+	"supsub": "⫔",
+	"supsup": "⫖",
+	"swarhk": "⤦",
+	"swarr": "↙",
+	"swArr": "⇙",
+	"swarrow": "↙",
+	"swnwar": "⤪",
+	"szlig": "ß",
+	"Tab": "\t",
+	"target": "⌖",
+	"Tau": "Τ",
+	"tau": "τ",
+	"tbrk": "⎴",
+	"Tcaron": "Ť",
+	"tcaron": "ť",
+	"Tcedil": "Ţ",
+	"tcedil": "ţ",
+	"Tcy": "Т",
+	"tcy": "т",
+	"tdot": "⃛",
+	"telrec": "⌕",
+	"Tfr": "𝔗",
+	"tfr": "𝔱",
+	"there4": "∴",
+	"therefore": "∴",
+	"Therefore": "∴",
+	"Theta": "Θ",
+	"theta": "θ",
+	"thetasym": "ϑ",
+	"thetav": "ϑ",
+	"thickapprox": "≈",
+	"thicksim": "∼",
+	"ThickSpace": "  ",
+	"ThinSpace": " ",
+	"thinsp": " ",
+	"thkap": "≈",
+	"thksim": "∼",
+	"THORN": "Þ",
+	"thorn": "þ",
+	"tilde": "˜",
+	"Tilde": "∼",
+	"TildeEqual": "≃",
+	"TildeFullEqual": "≅",
+	"TildeTilde": "≈",
+	"timesbar": "⨱",
+	"timesb": "⊠",
+	"times": "×",
+	"timesd": "⨰",
+	"tint": "∭",
+	"toea": "⤨",
+	"topbot": "⌶",
+	"topcir": "⫱",
+	"top": "⊤",
+	"Topf": "𝕋",
+	"topf": "𝕥",
+	"topfork": "⫚",
+	"tosa": "⤩",
+	"tprime": "‴",
+	"trade": "™",
+	"TRADE": "™",
+	"triangle": "▵",
+	"triangledown": "▿",
+	"triangleleft": "◃",
+	"trianglelefteq": "⊴",
+	"triangleq": "≜",
+	"triangleright": "▹",
+	"trianglerighteq": "⊵",
+	"tridot": "◬",
+	"trie": "≜",
+	"triminus": "⨺",
+	"TripleDot": "⃛",
+	"triplus": "⨹",
+	"trisb": "⧍",
+	"tritime": "⨻",
+	"trpezium": "⏢",
+	"Tscr": "𝒯",
+	"tscr": "𝓉",
+	"TScy": "Ц",
+	"tscy": "ц",
+	"TSHcy": "Ћ",
+	"tshcy": "ћ",
+	"Tstrok": "Ŧ",
+	"tstrok": "ŧ",
+	"twixt": "≬",
+	"twoheadleftarrow": "↞",
+	"twoheadrightarrow": "↠",
+	"Uacute": "Ú",
+	"uacute": "ú",
+	"uarr": "↑",
+	"Uarr": "↟",
+	"uArr": "⇑",
+	"Uarrocir": "⥉",
+	"Ubrcy": "Ў",
+	"ubrcy": "ў",
+	"Ubreve": "Ŭ",
+	"ubreve": "ŭ",
+	"Ucirc": "Û",
+	"ucirc": "û",
+	"Ucy": "У",
+	"ucy": "у",
+	"udarr": "⇅",
+	"Udblac": "Ű",
+	"udblac": "ű",
+	"udhar": "⥮",
+	"ufisht": "⥾",
+	"Ufr": "𝔘",
+	"ufr": "𝔲",
+	"Ugrave": "Ù",
+	"ugrave": "ù",
+	"uHar": "⥣",
+	"uharl": "↿",
+	"uharr": "↾",
+	"uhblk": "▀",
+	"ulcorn": "⌜",
+	"ulcorner": "⌜",
+	"ulcrop": "⌏",
+	"ultri": "◸",
+	"Umacr": "Ū",
+	"umacr": "ū",
+	"uml": "¨",
+	"UnderBar": "_",
+	"UnderBrace": "⏟",
+	"UnderBracket": "⎵",
+	"UnderParenthesis": "⏝",
+	"Union": "⋃",
+	"UnionPlus": "⊎",
+	"Uogon": "Ų",
+	"uogon": "ų",
+	"Uopf": "𝕌",
+	"uopf": "𝕦",
+	"UpArrowBar": "⤒",
+	"uparrow": "↑",
+	"UpArrow": "↑",
+	"Uparrow": "⇑",
+	"UpArrowDownArrow": "⇅",
+	"updownarrow": "↕",
+	"UpDownArrow": "↕",
+	"Updownarrow": "⇕",
+	"UpEquilibrium": "⥮",
+	"upharpoonleft": "↿",
+	"upharpoonright": "↾",
+	"uplus": "⊎",
+	"UpperLeftArrow": "↖",
+	"UpperRightArrow": "↗",
+	"upsi": "υ",
+	"Upsi": "ϒ",
+	"upsih": "ϒ",
+	"Upsilon": "Υ",
+	"upsilon": "υ",
+	"UpTeeArrow": "↥",
+	"UpTee": "⊥",
+	"upuparrows": "⇈",
+	"urcorn": "⌝",
+	"urcorner": "⌝",
+	"urcrop": "⌎",
+	"Uring": "Ů",
+	"uring": "ů",
+	"urtri": "◹",
+	"Uscr": "𝒰",
+	"uscr": "𝓊",
+	"utdot": "⋰",
+	"Utilde": "Ũ",
+	"utilde": "ũ",
+	"utri": "▵",
+	"utrif": "▴",
+	"uuarr": "⇈",
+	"Uuml": "Ü",
+	"uuml": "ü",
+	"uwangle": "⦧",
+	"vangrt": "⦜",
+	"varepsilon": "ϵ",
+	"varkappa": "ϰ",
+	"varnothing": "∅",
+	"varphi": "ϕ",
+	"varpi": "ϖ",
+	"varpropto": "∝",
+	"varr": "↕",
+	"vArr": "⇕",
+	"varrho": "ϱ",
+	"varsigma": "ς",
+	"varsubsetneq": "⊊︀",
+	"varsubsetneqq": "⫋︀",
+	"varsupsetneq": "⊋︀",
+	"varsupsetneqq": "⫌︀",
+	"vartheta": "ϑ",
+	"vartriangleleft": "⊲",
+	"vartriangleright": "⊳",
+	"vBar": "⫨",
+	"Vbar": "⫫",
+	"vBarv": "⫩",
+	"Vcy": "В",
+	"vcy": "в",
+	"vdash": "⊢",
+	"vDash": "⊨",
+	"Vdash": "⊩",
+	"VDash": "⊫",
+	"Vdashl": "⫦",
+	"veebar": "⊻",
+	"vee": "∨",
+	"Vee": "⋁",
+	"veeeq": "≚",
+	"vellip": "⋮",
+	"verbar": "|",
+	"Verbar": "‖",
+	"vert": "|",
+	"Vert": "‖",
+	"VerticalBar": "∣",
+	"VerticalLine": "|",
+	"VerticalSeparator": "❘",
+	"VerticalTilde": "≀",
+	"VeryThinSpace": " ",
+	"Vfr": "𝔙",
+	"vfr": "𝔳",
+	"vltri": "⊲",
+	"vnsub": "⊂⃒",
+	"vnsup": "⊃⃒",
+	"Vopf": "𝕍",
+	"vopf": "𝕧",
+	"vprop": "∝",
+	"vrtri": "⊳",
+	"Vscr": "𝒱",
+	"vscr": "𝓋",
+	"vsubnE": "⫋︀",
+	"vsubne": "⊊︀",
+	"vsupnE": "⫌︀",
+	"vsupne": "⊋︀",
+	"Vvdash": "⊪",
+	"vzigzag": "⦚",
+	"Wcirc": "Ŵ",
+	"wcirc": "ŵ",
+	"wedbar": "⩟",
+	"wedge": "∧",
+	"Wedge": "⋀",
+	"wedgeq": "≙",
+	"weierp": "℘",
+	"Wfr": "𝔚",
+	"wfr": "𝔴",
+	"Wopf": "𝕎",
+	"wopf": "𝕨",
+	"wp": "℘",
+	"wr": "≀",
+	"wreath": "≀",
+	"Wscr": "𝒲",
+	"wscr": "𝓌",
+	"xcap": "⋂",
+	"xcirc": "◯",
+	"xcup": "⋃",
+	"xdtri": "▽",
+	"Xfr": "𝔛",
+	"xfr": "𝔵",
+	"xharr": "⟷",
+	"xhArr": "⟺",
+	"Xi": "Ξ",
+	"xi": "ξ",
+	"xlarr": "⟵",
+	"xlArr": "⟸",
+	"xmap": "⟼",
+	"xnis": "⋻",
+	"xodot": "⨀",
+	"Xopf": "𝕏",
+	"xopf": "𝕩",
+	"xoplus": "⨁",
+	"xotime": "⨂",
+	"xrarr": "⟶",
+	"xrArr": "⟹",
+	"Xscr": "𝒳",
+	"xscr": "𝓍",
+	"xsqcup": "⨆",
+	"xuplus": "⨄",
+	"xutri": "△",
+	"xvee": "⋁",
+	"xwedge": "⋀",
+	"Yacute": "Ý",
+	"yacute": "ý",
+	"YAcy": "Я",
+	"yacy": "я",
+	"Ycirc": "Ŷ",
+	"ycirc": "ŷ",
+	"Ycy": "Ы",
+	"ycy": "ы",
+	"yen": "¥",
+	"Yfr": "𝔜",
+	"yfr": "𝔶",
+	"YIcy": "Ї",
+	"yicy": "ї",
+	"Yopf": "𝕐",
+	"yopf": "𝕪",
+	"Yscr": "𝒴",
+	"yscr": "𝓎",
+	"YUcy": "Ю",
+	"yucy": "ю",
+	"yuml": "ÿ",
+	"Yuml": "Ÿ",
+	"Zacute": "Ź",
+	"zacute": "ź",
+	"Zcaron": "Ž",
+	"zcaron": "ž",
+	"Zcy": "З",
+	"zcy": "з",
+	"Zdot": "Ż",
+	"zdot": "ż",
+	"zeetrf": "ℨ",
+	"ZeroWidthSpace": "​",
+	"Zeta": "Ζ",
+	"zeta": "ζ",
+	"zfr": "𝔷",
+	"Zfr": "ℨ",
+	"ZHcy": "Ж",
+	"zhcy": "ж",
+	"zigrarr": "⇝",
+	"zopf": "𝕫",
+	"Zopf": "ℤ",
+	"Zscr": "𝒵",
+	"zscr": "𝓏",
+	"zwj": "‍",
+	"zwnj": "‌"
+};
+
+/***/ }),
+/* 4 */
+/***/ (function(module, exports) {
+
+module.exports = {
+	"amp": "&",
+	"apos": "'",
+	"gt": ">",
+	"lt": "<",
+	"quot": "\""
+};
+
+/***/ }),
+/* 5 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+Object.defineProperty(exports,"__esModule",{value:true});/**
  * opts {
  *  each: fn(node),
  *  leaf: fn(node),
@@ -85,2873 +2651,3156 @@ Object.defineProperty(exports, "__esModule", {
  *  parent: TODO
  *   includeRoot: TODO
  * }
- */
-function traverse(tw, opts) {
-  function fn() {
-    if (!tw.currentNode.isEqualNode(tw.root)) {
-      opts.each(tw.currentNode);
-    }
-    if (tw.firstChild()) {
-      fn();
-    } else {
-      opts.leaf(tw.currentNode);
-    }
-    opts.sibling(tw.currentNode);
-    if (tw.nextSibling()) {
-      fn();
-    } else {
-      tw.parentNode();
-      return;
-    }
-  }
-
-  fn();
-}
-
-exports.default = traverse;
+ */function traverse(tw,opts){function fn(){if(!tw.currentNode.isEqualNode(tw.root)){opts.each(tw.currentNode);}if(tw.firstChild()){fn();}else{opts.leaf(tw.currentNode);}opts.sibling(tw.currentNode);if(tw.nextSibling()){fn();}else{tw.parentNode();return;}}fn();}exports.default=traverse;
 //# sourceMappingURL=traverse.js.map
 
 /***/ }),
-/* 1 */
-/***/ (function(module, exports, __webpack_require__) {
-
-var __WEBPACK_AMD_DEFINE_RESULT__;;/*! showdown 06-02-2017 */
-(function(){
-/**
- * Created by Tivie on 13-07-2015.
- */
-
-function getDefaultOpts (simple) {
-  'use strict';
-
-  var defaultOptions = {
-    omitExtraWLInCodeBlocks: {
-      defaultValue: false,
-      describe: 'Omit the default extra whiteline added to code blocks',
-      type: 'boolean'
-    },
-    noHeaderId: {
-      defaultValue: false,
-      describe: 'Turn on/off generated header id',
-      type: 'boolean'
-    },
-    prefixHeaderId: {
-      defaultValue: false,
-      describe: 'Specify a prefix to generated header ids',
-      type: 'string'
-    },
-    ghCompatibleHeaderId: {
-      defaultValue: false,
-      describe: 'Generate header ids compatible with github style (spaces are replaced with dashes, a bunch of non alphanumeric chars are removed)',
-      type: 'boolean'
-    },
-    headerLevelStart: {
-      defaultValue: false,
-      describe: 'The header blocks level start',
-      type: 'integer'
-    },
-    parseImgDimensions: {
-      defaultValue: false,
-      describe: 'Turn on/off image dimension parsing',
-      type: 'boolean'
-    },
-    simplifiedAutoLink: {
-      defaultValue: false,
-      describe: 'Turn on/off GFM autolink style',
-      type: 'boolean'
-    },
-    excludeTrailingPunctuationFromURLs: {
-      defaultValue: false,
-      describe: 'Excludes trailing punctuation from links generated with autoLinking',
-      type: 'boolean'
-    },
-    literalMidWordUnderscores: {
-      defaultValue: false,
-      describe: 'Parse midword underscores as literal underscores',
-      type: 'boolean'
-    },
-    strikethrough: {
-      defaultValue: false,
-      describe: 'Turn on/off strikethrough support',
-      type: 'boolean'
-    },
-    tables: {
-      defaultValue: false,
-      describe: 'Turn on/off tables support',
-      type: 'boolean'
-    },
-    tablesHeaderId: {
-      defaultValue: false,
-      describe: 'Add an id to table headers',
-      type: 'boolean'
-    },
-    ghCodeBlocks: {
-      defaultValue: true,
-      describe: 'Turn on/off GFM fenced code blocks support',
-      type: 'boolean'
-    },
-    tasklists: {
-      defaultValue: false,
-      describe: 'Turn on/off GFM tasklist support',
-      type: 'boolean'
-    },
-    smoothLivePreview: {
-      defaultValue: false,
-      describe: 'Prevents weird effects in live previews due to incomplete input',
-      type: 'boolean'
-    },
-    smartIndentationFix: {
-      defaultValue: false,
-      description: 'Tries to smartly fix indentation in es6 strings',
-      type: 'boolean'
-    },
-    disableForced4SpacesIndentedSublists: {
-      defaultValue: false,
-      description: 'Disables the requirement of indenting nested sublists by 4 spaces',
-      type: 'boolean'
-    },
-    simpleLineBreaks: {
-      defaultValue: false,
-      description: 'Parses simple line breaks as <br> (GFM Style)',
-      type: 'boolean'
-    },
-    requireSpaceBeforeHeadingText: {
-      defaultValue: false,
-      description: 'Makes adding a space between `#` and the header text mandatory (GFM Style)',
-      type: 'boolean'
-    },
-    ghMentions: {
-      defaultValue: false,
-      description: 'Enables github @mentions',
-      type: 'boolean'
-    },
-    ghMentionsLink: {
-      defaultValue: 'https://github.com/{u}',
-      description: 'Changes the link generated by @mentions. Only applies if ghMentions option is enabled.',
-      type: 'string'
-    },
-    encodeEmails: {
-      defaultValue: true,
-      description: 'Encode e-mail addresses through the use of Character Entities, transforming ASCII e-mail addresses into its equivalent decimal entities',
-      type: 'boolean'
-    }
-  };
-  if (simple === false) {
-    return JSON.parse(JSON.stringify(defaultOptions));
-  }
-  var ret = {};
-  for (var opt in defaultOptions) {
-    if (defaultOptions.hasOwnProperty(opt)) {
-      ret[opt] = defaultOptions[opt].defaultValue;
-    }
-  }
-  return ret;
-}
-
-function allOptionsOn () {
-  'use strict';
-  var options = getDefaultOpts(true),
-      ret = {};
-  for (var opt in options) {
-    if (options.hasOwnProperty(opt)) {
-      ret[opt] = true;
-    }
-  }
-  return ret;
-}
-
-/**
- * Created by Tivie on 06-01-2015.
- */
-
-// Private properties
-var showdown = {},
-    parsers = {},
-    extensions = {},
-    globalOptions = getDefaultOpts(true),
-    setFlavor = 'vanilla',
-    flavor = {
-      github: {
-        omitExtraWLInCodeBlocks:              true,
-        simplifiedAutoLink:                   true,
-        excludeTrailingPunctuationFromURLs:   true,
-        literalMidWordUnderscores:            true,
-        strikethrough:                        true,
-        tables:                               true,
-        tablesHeaderId:                       true,
-        ghCodeBlocks:                         true,
-        tasklists:                            true,
-        disableForced4SpacesIndentedSublists: true,
-        simpleLineBreaks:                     true,
-        requireSpaceBeforeHeadingText:        true,
-        ghCompatibleHeaderId:                 true,
-        ghMentions:                           true
-      },
-      original: {
-        noHeaderId:                           true,
-        ghCodeBlocks:                         false
-      },
-      ghost: {
-        omitExtraWLInCodeBlocks:              true,
-        parseImgDimensions:                   true,
-        simplifiedAutoLink:                   true,
-        excludeTrailingPunctuationFromURLs:   true,
-        literalMidWordUnderscores:            true,
-        strikethrough:                        true,
-        tables:                               true,
-        tablesHeaderId:                       true,
-        ghCodeBlocks:                         true,
-        tasklists:                            true,
-        smoothLivePreview:                    true,
-        simpleLineBreaks:                     true,
-        requireSpaceBeforeHeadingText:        true,
-        ghMentions:                           false,
-        encodeEmails:                         true
-      },
-      vanilla: getDefaultOpts(true),
-      allOn: allOptionsOn()
-    };
-
-/**
- * helper namespace
- * @type {{}}
- */
-showdown.helper = {};
-
-/**
- * TODO LEGACY SUPPORT CODE
- * @type {{}}
- */
-showdown.extensions = {};
-
-/**
- * Set a global option
- * @static
- * @param {string} key
- * @param {*} value
- * @returns {showdown}
- */
-showdown.setOption = function (key, value) {
-  'use strict';
-  globalOptions[key] = value;
-  return this;
-};
-
-/**
- * Get a global option
- * @static
- * @param {string} key
- * @returns {*}
- */
-showdown.getOption = function (key) {
-  'use strict';
-  return globalOptions[key];
-};
-
-/**
- * Get the global options
- * @static
- * @returns {{}}
- */
-showdown.getOptions = function () {
-  'use strict';
-  return globalOptions;
-};
-
-/**
- * Reset global options to the default values
- * @static
- */
-showdown.resetOptions = function () {
-  'use strict';
-  globalOptions = getDefaultOpts(true);
-};
-
-/**
- * Set the flavor showdown should use as default
- * @param {string} name
- */
-showdown.setFlavor = function (name) {
-  'use strict';
-  if (!flavor.hasOwnProperty(name)) {
-    throw Error(name + ' flavor was not found');
-  }
-  var preset = flavor[name];
-  setFlavor = name;
-  for (var option in preset) {
-    if (preset.hasOwnProperty(option)) {
-      globalOptions[option] = preset[option];
-    }
-  }
-};
-
-/**
- * Get the currently set flavor
- * @returns {string}
- */
-showdown.getFlavor = function () {
-  'use strict';
-  return setFlavor;
-};
-
-/**
- * Get the options of a specified flavor. Returns undefined if the flavor was not found
- * @param {string} name Name of the flavor
- * @returns {{}|undefined}
- */
-showdown.getFlavorOptions = function (name) {
-  'use strict';
-  if (flavor.hasOwnProperty(name)) {
-    return flavor[name];
-  }
-};
-
-/**
- * Get the default options
- * @static
- * @param {boolean} [simple=true]
- * @returns {{}}
- */
-showdown.getDefaultOptions = function (simple) {
-  'use strict';
-  return getDefaultOpts(simple);
-};
-
-/**
- * Get or set a subParser
- *
- * subParser(name)       - Get a registered subParser
- * subParser(name, func) - Register a subParser
- * @static
- * @param {string} name
- * @param {function} [func]
- * @returns {*}
- */
-showdown.subParser = function (name, func) {
-  'use strict';
-  if (showdown.helper.isString(name)) {
-    if (typeof func !== 'undefined') {
-      parsers[name] = func;
-    } else {
-      if (parsers.hasOwnProperty(name)) {
-        return parsers[name];
-      } else {
-        throw Error('SubParser named ' + name + ' not registered!');
-      }
-    }
-  }
-};
-
-/**
- * Gets or registers an extension
- * @static
- * @param {string} name
- * @param {object|function=} ext
- * @returns {*}
- */
-showdown.extension = function (name, ext) {
-  'use strict';
-
-  if (!showdown.helper.isString(name)) {
-    throw Error('Extension \'name\' must be a string');
-  }
-
-  name = showdown.helper.stdExtName(name);
-
-  // Getter
-  if (showdown.helper.isUndefined(ext)) {
-    if (!extensions.hasOwnProperty(name)) {
-      throw Error('Extension named ' + name + ' is not registered!');
-    }
-    return extensions[name];
-
-    // Setter
-  } else {
-    // Expand extension if it's wrapped in a function
-    if (typeof ext === 'function') {
-      ext = ext();
-    }
-
-    // Ensure extension is an array
-    if (!showdown.helper.isArray(ext)) {
-      ext = [ext];
-    }
-
-    var validExtension = validate(ext, name);
-
-    if (validExtension.valid) {
-      extensions[name] = ext;
-    } else {
-      throw Error(validExtension.error);
-    }
-  }
-};
-
-/**
- * Gets all extensions registered
- * @returns {{}}
- */
-showdown.getAllExtensions = function () {
-  'use strict';
-  return extensions;
-};
-
-/**
- * Remove an extension
- * @param {string} name
- */
-showdown.removeExtension = function (name) {
-  'use strict';
-  delete extensions[name];
-};
-
-/**
- * Removes all extensions
- */
-showdown.resetExtensions = function () {
-  'use strict';
-  extensions = {};
-};
-
-/**
- * Validate extension
- * @param {array} extension
- * @param {string} name
- * @returns {{valid: boolean, error: string}}
- */
-function validate (extension, name) {
-  'use strict';
-
-  var errMsg = (name) ? 'Error in ' + name + ' extension->' : 'Error in unnamed extension',
-      ret = {
-        valid: true,
-        error: ''
-      };
-
-  if (!showdown.helper.isArray(extension)) {
-    extension = [extension];
-  }
-
-  for (var i = 0; i < extension.length; ++i) {
-    var baseMsg = errMsg + ' sub-extension ' + i + ': ',
-        ext = extension[i];
-    if (typeof ext !== 'object') {
-      ret.valid = false;
-      ret.error = baseMsg + 'must be an object, but ' + typeof ext + ' given';
-      return ret;
-    }
-
-    if (!showdown.helper.isString(ext.type)) {
-      ret.valid = false;
-      ret.error = baseMsg + 'property "type" must be a string, but ' + typeof ext.type + ' given';
-      return ret;
-    }
-
-    var type = ext.type = ext.type.toLowerCase();
-
-    // normalize extension type
-    if (type === 'language') {
-      type = ext.type = 'lang';
-    }
-
-    if (type === 'html') {
-      type = ext.type = 'output';
-    }
-
-    if (type !== 'lang' && type !== 'output' && type !== 'listener') {
-      ret.valid = false;
-      ret.error = baseMsg + 'type ' + type + ' is not recognized. Valid values: "lang/language", "output/html" or "listener"';
-      return ret;
-    }
-
-    if (type === 'listener') {
-      if (showdown.helper.isUndefined(ext.listeners)) {
-        ret.valid = false;
-        ret.error = baseMsg + '. Extensions of type "listener" must have a property called "listeners"';
-        return ret;
-      }
-    } else {
-      if (showdown.helper.isUndefined(ext.filter) && showdown.helper.isUndefined(ext.regex)) {
-        ret.valid = false;
-        ret.error = baseMsg + type + ' extensions must define either a "regex" property or a "filter" method';
-        return ret;
-      }
-    }
-
-    if (ext.listeners) {
-      if (typeof ext.listeners !== 'object') {
-        ret.valid = false;
-        ret.error = baseMsg + '"listeners" property must be an object but ' + typeof ext.listeners + ' given';
-        return ret;
-      }
-      for (var ln in ext.listeners) {
-        if (ext.listeners.hasOwnProperty(ln)) {
-          if (typeof ext.listeners[ln] !== 'function') {
-            ret.valid = false;
-            ret.error = baseMsg + '"listeners" property must be an hash of [event name]: [callback]. listeners.' + ln +
-              ' must be a function but ' + typeof ext.listeners[ln] + ' given';
-            return ret;
-          }
-        }
-      }
-    }
-
-    if (ext.filter) {
-      if (typeof ext.filter !== 'function') {
-        ret.valid = false;
-        ret.error = baseMsg + '"filter" must be a function, but ' + typeof ext.filter + ' given';
-        return ret;
-      }
-    } else if (ext.regex) {
-      if (showdown.helper.isString(ext.regex)) {
-        ext.regex = new RegExp(ext.regex, 'g');
-      }
-      if (!(ext.regex instanceof RegExp)) {
-        ret.valid = false;
-        ret.error = baseMsg + '"regex" property must either be a string or a RegExp object, but ' + typeof ext.regex + ' given';
-        return ret;
-      }
-      if (showdown.helper.isUndefined(ext.replace)) {
-        ret.valid = false;
-        ret.error = baseMsg + '"regex" extensions must implement a replace string or function';
-        return ret;
-      }
-    }
-  }
-  return ret;
-}
-
-/**
- * Validate extension
- * @param {object} ext
- * @returns {boolean}
- */
-showdown.validateExtension = function (ext) {
-  'use strict';
-
-  var validateExtension = validate(ext, null);
-  if (!validateExtension.valid) {
-    console.warn(validateExtension.error);
-    return false;
-  }
-  return true;
-};
-
-/**
- * showdownjs helper functions
- */
-
-if (!showdown.hasOwnProperty('helper')) {
-  showdown.helper = {};
-}
-
-/**
- * Check if var is string
- * @static
- * @param {string} a
- * @returns {boolean}
- */
-showdown.helper.isString = function (a) {
-  'use strict';
-  return (typeof a === 'string' || a instanceof String);
-};
-
-/**
- * Check if var is a function
- * @static
- * @param {*} a
- * @returns {boolean}
- */
-showdown.helper.isFunction = function (a) {
-  'use strict';
-  var getType = {};
-  return a && getType.toString.call(a) === '[object Function]';
-};
-
-/**
- * isArray helper function
- * @static
- * @param {*} a
- * @returns {boolean}
- */
-showdown.helper.isArray = function (a) {
-  'use strict';
-  return a.constructor === Array;
-};
-
-/**
- * Check if value is undefined
- * @static
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is `undefined`, else `false`.
- */
-showdown.helper.isUndefined = function (value) {
-  'use strict';
-  return typeof value === 'undefined';
-};
-
-/**
- * ForEach helper function
- * Iterates over Arrays and Objects (own properties only)
- * @static
- * @param {*} obj
- * @param {function} callback Accepts 3 params: 1. value, 2. key, 3. the original array/object
- */
-showdown.helper.forEach = function (obj, callback) {
-  'use strict';
-  // check if obj is defined
-  if (showdown.helper.isUndefined(obj)) {
-    throw new Error('obj param is required');
-  }
-
-  if (showdown.helper.isUndefined(callback)) {
-    throw new Error('callback param is required');
-  }
-
-  if (!showdown.helper.isFunction(callback)) {
-    throw new Error('callback param must be a function/closure');
-  }
-
-  if (typeof obj.forEach === 'function') {
-    obj.forEach(callback);
-  } else if (showdown.helper.isArray(obj)) {
-    for (var i = 0; i < obj.length; i++) {
-      callback(obj[i], i, obj);
-    }
-  } else if (typeof (obj) === 'object') {
-    for (var prop in obj) {
-      if (obj.hasOwnProperty(prop)) {
-        callback(obj[prop], prop, obj);
-      }
-    }
-  } else {
-    throw new Error('obj does not seem to be an array or an iterable object');
-  }
-};
-
-/**
- * Standardidize extension name
- * @static
- * @param {string} s extension name
- * @returns {string}
- */
-showdown.helper.stdExtName = function (s) {
-  'use strict';
-  return s.replace(/[_?*+\/\\.^-]/g, '').replace(/\s/g, '').toLowerCase();
-};
-
-function escapeCharactersCallback (wholeMatch, m1) {
-  'use strict';
-  var charCodeToEscape = m1.charCodeAt(0);
-  return '¨E' + charCodeToEscape + 'E';
-}
-
-/**
- * Callback used to escape characters when passing through String.replace
- * @static
- * @param {string} wholeMatch
- * @param {string} m1
- * @returns {string}
- */
-showdown.helper.escapeCharactersCallback = escapeCharactersCallback;
-
-/**
- * Escape characters in a string
- * @static
- * @param {string} text
- * @param {string} charsToEscape
- * @param {boolean} afterBackslash
- * @returns {XML|string|void|*}
- */
-showdown.helper.escapeCharacters = function (text, charsToEscape, afterBackslash) {
-  'use strict';
-  // First we have to escape the escape characters so that
-  // we can build a character class out of them
-  var regexString = '([' + charsToEscape.replace(/([\[\]\\])/g, '\\$1') + '])';
-
-  if (afterBackslash) {
-    regexString = '\\\\' + regexString;
-  }
-
-  var regex = new RegExp(regexString, 'g');
-  text = text.replace(regex, escapeCharactersCallback);
-
-  return text;
-};
-
-var rgxFindMatchPos = function (str, left, right, flags) {
-  'use strict';
-  var f = flags || '',
-      g = f.indexOf('g') > -1,
-      x = new RegExp(left + '|' + right, 'g' + f.replace(/g/g, '')),
-      l = new RegExp(left, f.replace(/g/g, '')),
-      pos = [],
-      t, s, m, start, end;
-
-  do {
-    t = 0;
-    while ((m = x.exec(str))) {
-      if (l.test(m[0])) {
-        if (!(t++)) {
-          s = x.lastIndex;
-          start = s - m[0].length;
-        }
-      } else if (t) {
-        if (!--t) {
-          end = m.index + m[0].length;
-          var obj = {
-            left: {start: start, end: s},
-            match: {start: s, end: m.index},
-            right: {start: m.index, end: end},
-            wholeMatch: {start: start, end: end}
-          };
-          pos.push(obj);
-          if (!g) {
-            return pos;
-          }
-        }
-      }
-    }
-  } while (t && (x.lastIndex = s));
-
-  return pos;
-};
-
-/**
- * matchRecursiveRegExp
- *
- * (c) 2007 Steven Levithan <stevenlevithan.com>
- * MIT License
- *
- * Accepts a string to search, a left and right format delimiter
- * as regex patterns, and optional regex flags. Returns an array
- * of matches, allowing nested instances of left/right delimiters.
- * Use the "g" flag to return all matches, otherwise only the
- * first is returned. Be careful to ensure that the left and
- * right format delimiters produce mutually exclusive matches.
- * Backreferences are not supported within the right delimiter
- * due to how it is internally combined with the left delimiter.
- * When matching strings whose format delimiters are unbalanced
- * to the left or right, the output is intentionally as a
- * conventional regex library with recursion support would
- * produce, e.g. "<<x>" and "<x>>" both produce ["x"] when using
- * "<" and ">" as the delimiters (both strings contain a single,
- * balanced instance of "<x>").
- *
- * examples:
- * matchRecursiveRegExp("test", "\\(", "\\)")
- * returns: []
- * matchRecursiveRegExp("<t<<e>><s>>t<>", "<", ">", "g")
- * returns: ["t<<e>><s>", ""]
- * matchRecursiveRegExp("<div id=\"x\">test</div>", "<div\\b[^>]*>", "</div>", "gi")
- * returns: ["test"]
- */
-showdown.helper.matchRecursiveRegExp = function (str, left, right, flags) {
-  'use strict';
-
-  var matchPos = rgxFindMatchPos (str, left, right, flags),
-      results = [];
-
-  for (var i = 0; i < matchPos.length; ++i) {
-    results.push([
-      str.slice(matchPos[i].wholeMatch.start, matchPos[i].wholeMatch.end),
-      str.slice(matchPos[i].match.start, matchPos[i].match.end),
-      str.slice(matchPos[i].left.start, matchPos[i].left.end),
-      str.slice(matchPos[i].right.start, matchPos[i].right.end)
-    ]);
-  }
-  return results;
-};
-
-/**
- *
- * @param {string} str
- * @param {string|function} replacement
- * @param {string} left
- * @param {string} right
- * @param {string} flags
- * @returns {string}
- */
-showdown.helper.replaceRecursiveRegExp = function (str, replacement, left, right, flags) {
-  'use strict';
-
-  if (!showdown.helper.isFunction(replacement)) {
-    var repStr = replacement;
-    replacement = function () {
-      return repStr;
-    };
-  }
-
-  var matchPos = rgxFindMatchPos(str, left, right, flags),
-      finalStr = str,
-      lng = matchPos.length;
-
-  if (lng > 0) {
-    var bits = [];
-    if (matchPos[0].wholeMatch.start !== 0) {
-      bits.push(str.slice(0, matchPos[0].wholeMatch.start));
-    }
-    for (var i = 0; i < lng; ++i) {
-      bits.push(
-        replacement(
-          str.slice(matchPos[i].wholeMatch.start, matchPos[i].wholeMatch.end),
-          str.slice(matchPos[i].match.start, matchPos[i].match.end),
-          str.slice(matchPos[i].left.start, matchPos[i].left.end),
-          str.slice(matchPos[i].right.start, matchPos[i].right.end)
-        )
-      );
-      if (i < lng - 1) {
-        bits.push(str.slice(matchPos[i].wholeMatch.end, matchPos[i + 1].wholeMatch.start));
-      }
-    }
-    if (matchPos[lng - 1].wholeMatch.end < str.length) {
-      bits.push(str.slice(matchPos[lng - 1].wholeMatch.end));
-    }
-    finalStr = bits.join('');
-  }
-  return finalStr;
-};
-
-/**
- * Obfuscate an e-mail address through the use of Character Entities,
- * transforming ASCII characters into their equivalent decimal or hex entities.
- *
- * Since it has a random component, subsequent calls to this function produce different results
- *
- * @param {string} mail
- * @returns {string}
- */
-showdown.helper.encodeEmailAddress = function (mail) {
-  'use strict';
-  var encode = [
-    function (ch) {
-      return '&#' + ch.charCodeAt(0) + ';';
-    },
-    function (ch) {
-      return '&#x' + ch.charCodeAt(0).toString(16) + ';';
-    },
-    function (ch) {
-      return ch;
-    }
-  ];
-
-  mail = mail.replace(/./g, function (ch) {
-    if (ch === '@') {
-      // this *must* be encoded. I insist.
-      ch = encode[Math.floor(Math.random() * 2)](ch);
-    } else {
-      var r = Math.random();
-      // roughly 10% raw, 45% hex, 45% dec
-      ch = (
-        r > 0.9 ? encode[2](ch) : r > 0.45 ? encode[1](ch) : encode[0](ch)
-      );
-    }
-    return ch;
-  });
-
-  return mail;
-};
-
-/**
- * POLYFILLS
- */
-// use this instead of builtin is undefined for IE8 compatibility
-if (typeof(console) === 'undefined') {
-  console = {
-    warn: function (msg) {
-      'use strict';
-      alert(msg);
-    },
-    log: function (msg) {
-      'use strict';
-      alert(msg);
-    },
-    error: function (msg) {
-      'use strict';
-      throw msg;
-    }
-  };
-}
-
-/**
- * Common regexes.
- * We declare some common regexes to improve performance
- */
-showdown.helper.regexes = {
-  asteriskAndDash: /([*_])/g
-};
-
-/**
- * Created by Estevao on 31-05-2015.
- */
-
-/**
- * Showdown Converter class
- * @class
- * @param {object} [converterOptions]
- * @returns {Converter}
- */
-showdown.Converter = function (converterOptions) {
-  'use strict';
-
-  var
-      /**
-       * Options used by this converter
-       * @private
-       * @type {{}}
-       */
-      options = {},
-
-      /**
-       * Language extensions used by this converter
-       * @private
-       * @type {Array}
-       */
-      langExtensions = [],
-
-      /**
-       * Output modifiers extensions used by this converter
-       * @private
-       * @type {Array}
-       */
-      outputModifiers = [],
-
-      /**
-       * Event listeners
-       * @private
-       * @type {{}}
-       */
-      listeners = {},
-
-      /**
-       * The flavor set in this converter
-       */
-      setConvFlavor = setFlavor;
-
-  _constructor();
-
-  /**
-   * Converter constructor
-   * @private
-   */
-  function _constructor () {
-    converterOptions = converterOptions || {};
-
-    for (var gOpt in globalOptions) {
-      if (globalOptions.hasOwnProperty(gOpt)) {
-        options[gOpt] = globalOptions[gOpt];
-      }
-    }
-
-    // Merge options
-    if (typeof converterOptions === 'object') {
-      for (var opt in converterOptions) {
-        if (converterOptions.hasOwnProperty(opt)) {
-          options[opt] = converterOptions[opt];
-        }
-      }
-    } else {
-      throw Error('Converter expects the passed parameter to be an object, but ' + typeof converterOptions +
-      ' was passed instead.');
-    }
-
-    if (options.extensions) {
-      showdown.helper.forEach(options.extensions, _parseExtension);
-    }
-  }
-
-  /**
-   * Parse extension
-   * @param {*} ext
-   * @param {string} [name='']
-   * @private
-   */
-  function _parseExtension (ext, name) {
-
-    name = name || null;
-    // If it's a string, the extension was previously loaded
-    if (showdown.helper.isString(ext)) {
-      ext = showdown.helper.stdExtName(ext);
-      name = ext;
-
-      // LEGACY_SUPPORT CODE
-      if (showdown.extensions[ext]) {
-        console.warn('DEPRECATION WARNING: ' + ext + ' is an old extension that uses a deprecated loading method.' +
-          'Please inform the developer that the extension should be updated!');
-        legacyExtensionLoading(showdown.extensions[ext], ext);
-        return;
-      // END LEGACY SUPPORT CODE
-
-      } else if (!showdown.helper.isUndefined(extensions[ext])) {
-        ext = extensions[ext];
-
-      } else {
-        throw Error('Extension "' + ext + '" could not be loaded. It was either not found or is not a valid extension.');
-      }
-    }
-
-    if (typeof ext === 'function') {
-      ext = ext();
-    }
-
-    if (!showdown.helper.isArray(ext)) {
-      ext = [ext];
-    }
-
-    var validExt = validate(ext, name);
-    if (!validExt.valid) {
-      throw Error(validExt.error);
-    }
-
-    for (var i = 0; i < ext.length; ++i) {
-      switch (ext[i].type) {
-
-        case 'lang':
-          langExtensions.push(ext[i]);
-          break;
-
-        case 'output':
-          outputModifiers.push(ext[i]);
-          break;
-      }
-      if (ext[i].hasOwnProperty('listeners')) {
-        for (var ln in ext[i].listeners) {
-          if (ext[i].listeners.hasOwnProperty(ln)) {
-            listen(ln, ext[i].listeners[ln]);
-          }
-        }
-      }
-    }
-
-  }
-
-  /**
-   * LEGACY_SUPPORT
-   * @param {*} ext
-   * @param {string} name
-   */
-  function legacyExtensionLoading (ext, name) {
-    if (typeof ext === 'function') {
-      ext = ext(new showdown.Converter());
-    }
-    if (!showdown.helper.isArray(ext)) {
-      ext = [ext];
-    }
-    var valid = validate(ext, name);
-
-    if (!valid.valid) {
-      throw Error(valid.error);
-    }
-
-    for (var i = 0; i < ext.length; ++i) {
-      switch (ext[i].type) {
-        case 'lang':
-          langExtensions.push(ext[i]);
-          break;
-        case 'output':
-          outputModifiers.push(ext[i]);
-          break;
-        default:// should never reach here
-          throw Error('Extension loader error: Type unrecognized!!!');
-      }
-    }
-  }
-
-  /**
-   * Listen to an event
-   * @param {string} name
-   * @param {function} callback
-   */
-  function listen (name, callback) {
-    if (!showdown.helper.isString(name)) {
-      throw Error('Invalid argument in converter.listen() method: name must be a string, but ' + typeof name + ' given');
-    }
-
-    if (typeof callback !== 'function') {
-      throw Error('Invalid argument in converter.listen() method: callback must be a function, but ' + typeof callback + ' given');
-    }
-
-    if (!listeners.hasOwnProperty(name)) {
-      listeners[name] = [];
-    }
-    listeners[name].push(callback);
-  }
-
-  function rTrimInputText (text) {
-    var rsp = text.match(/^\s*/)[0].length,
-        rgx = new RegExp('^\\s{0,' + rsp + '}', 'gm');
-    return text.replace(rgx, '');
-  }
-
-  /**
-   * Dispatch an event
-   * @private
-   * @param {string} evtName Event name
-   * @param {string} text Text
-   * @param {{}} options Converter Options
-   * @param {{}} globals
-   * @returns {string}
-   */
-  this._dispatch = function dispatch (evtName, text, options, globals) {
-    if (listeners.hasOwnProperty(evtName)) {
-      for (var ei = 0; ei < listeners[evtName].length; ++ei) {
-        var nText = listeners[evtName][ei](evtName, text, this, options, globals);
-        if (nText && typeof nText !== 'undefined') {
-          text = nText;
-        }
-      }
-    }
-    return text;
-  };
-
-  /**
-   * Listen to an event
-   * @param {string} name
-   * @param {function} callback
-   * @returns {showdown.Converter}
-   */
-  this.listen = function (name, callback) {
-    listen(name, callback);
-    return this;
-  };
-
-  /**
-   * Converts a markdown string into HTML
-   * @param {string} text
-   * @returns {*}
-   */
-  this.makeHtml = function (text) {
-    //check if text is not falsy
-    if (!text) {
-      return text;
-    }
-
-    var globals = {
-      gHtmlBlocks:     [],
-      gHtmlMdBlocks:   [],
-      gHtmlSpans:      [],
-      gUrls:           {},
-      gTitles:         {},
-      gDimensions:     {},
-      gListLevel:      0,
-      hashLinkCounts:  {},
-      langExtensions:  langExtensions,
-      outputModifiers: outputModifiers,
-      converter:       this,
-      ghCodeBlocks:    []
-    };
-
-    // This lets us use ¨ trema as an escape char to avoid md5 hashes
-    // The choice of character is arbitrary; anything that isn't
-    // magic in Markdown will work.
-    text = text.replace(/¨/g, '¨T');
-
-    // Replace $ with ¨D
-    // RegExp interprets $ as a special character
-    // when it's in a replacement string
-    text = text.replace(/\$/g, '¨D');
-
-    // Standardize line endings
-    text = text.replace(/\r\n/g, '\n'); // DOS to Unix
-    text = text.replace(/\r/g, '\n'); // Mac to Unix
-
-    // Stardardize line spaces (nbsp causes trouble in older browsers and some regex flavors)
-    text = text.replace(/\u00A0/g, ' ');
-
-    if (options.smartIndentationFix) {
-      text = rTrimInputText(text);
-    }
-
-    // Make sure text begins and ends with a couple of newlines:
-    text = '\n\n' + text + '\n\n';
-
-    // detab
-    text = showdown.subParser('detab')(text, options, globals);
-
-    /**
-     * Strip any lines consisting only of spaces and tabs.
-     * This makes subsequent regexs easier to write, because we can
-     * match consecutive blank lines with /\n+/ instead of something
-     * contorted like /[ \t]*\n+/
-     */
-    text = text.replace(/^[ \t]+$/mg, '');
-
-    //run languageExtensions
-    showdown.helper.forEach(langExtensions, function (ext) {
-      text = showdown.subParser('runExtension')(ext, text, options, globals);
-    });
-
-    // run the sub parsers
-    text = showdown.subParser('hashPreCodeTags')(text, options, globals);
-    text = showdown.subParser('githubCodeBlocks')(text, options, globals);
-    text = showdown.subParser('hashHTMLBlocks')(text, options, globals);
-    text = showdown.subParser('hashCodeTags')(text, options, globals);
-    text = showdown.subParser('stripLinkDefinitions')(text, options, globals);
-    text = showdown.subParser('blockGamut')(text, options, globals);
-    text = showdown.subParser('unhashHTMLSpans')(text, options, globals);
-    text = showdown.subParser('unescapeSpecialChars')(text, options, globals);
-
-    // attacklab: Restore dollar signs
-    text = text.replace(/¨D/g, '$$');
-
-    // attacklab: Restore tremas
-    text = text.replace(/¨T/g, '¨');
-
-    // Run output modifiers
-    showdown.helper.forEach(outputModifiers, function (ext) {
-      text = showdown.subParser('runExtension')(ext, text, options, globals);
-    });
-
-    return text;
-  };
-
-  /**
-   * Set an option of this Converter instance
-   * @param {string} key
-   * @param {*} value
-   */
-  this.setOption = function (key, value) {
-    options[key] = value;
-  };
-
-  /**
-   * Get the option of this Converter instance
-   * @param {string} key
-   * @returns {*}
-   */
-  this.getOption = function (key) {
-    return options[key];
-  };
-
-  /**
-   * Get the options of this Converter instance
-   * @returns {{}}
-   */
-  this.getOptions = function () {
-    return options;
-  };
-
-  /**
-   * Add extension to THIS converter
-   * @param {{}} extension
-   * @param {string} [name=null]
-   */
-  this.addExtension = function (extension, name) {
-    name = name || null;
-    _parseExtension(extension, name);
-  };
-
-  /**
-   * Use a global registered extension with THIS converter
-   * @param {string} extensionName Name of the previously registered extension
-   */
-  this.useExtension = function (extensionName) {
-    _parseExtension(extensionName);
-  };
-
-  /**
-   * Set the flavor THIS converter should use
-   * @param {string} name
-   */
-  this.setFlavor = function (name) {
-    if (!flavor.hasOwnProperty(name)) {
-      throw Error(name + ' flavor was not found');
-    }
-    var preset = flavor[name];
-    setConvFlavor = name;
-    for (var option in preset) {
-      if (preset.hasOwnProperty(option)) {
-        options[option] = preset[option];
-      }
-    }
-  };
-
-  /**
-   * Get the currently set flavor of this converter
-   * @returns {string}
-   */
-  this.getFlavor = function () {
-    return setConvFlavor;
-  };
-
-  /**
-   * Remove an extension from THIS converter.
-   * Note: This is a costly operation. It's better to initialize a new converter
-   * and specify the extensions you wish to use
-   * @param {Array} extension
-   */
-  this.removeExtension = function (extension) {
-    if (!showdown.helper.isArray(extension)) {
-      extension = [extension];
-    }
-    for (var a = 0; a < extension.length; ++a) {
-      var ext = extension[a];
-      for (var i = 0; i < langExtensions.length; ++i) {
-        if (langExtensions[i] === ext) {
-          langExtensions[i].splice(i, 1);
-        }
-      }
-      for (var ii = 0; ii < outputModifiers.length; ++i) {
-        if (outputModifiers[ii] === ext) {
-          outputModifiers[ii].splice(i, 1);
-        }
-      }
-    }
-  };
-
-  /**
-   * Get all extension of THIS converter
-   * @returns {{language: Array, output: Array}}
-   */
-  this.getAllExtensions = function () {
-    return {
-      language: langExtensions,
-      output: outputModifiers
-    };
-  };
-};
-
-/**
- * Turn Markdown link shortcuts into XHTML <a> tags.
- */
-showdown.subParser('anchors', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('anchors.before', text, options, globals);
-
-  var writeAnchorTag = function (wholeMatch, m1, m2, m3, m4, m5, m6, m7) {
-    if (showdown.helper.isUndefined(m7)) {
-      m7 = '';
-    }
-    wholeMatch = m1;
-    var linkText = m2,
-        linkId = m3.toLowerCase(),
-        url = m4,
-        title = m7;
-
-    if (!url) {
-      if (!linkId) {
-        // lower-case and turn embedded newlines into spaces
-        linkId = linkText.toLowerCase().replace(/ ?\n/g, ' ');
-      }
-      url = '#' + linkId;
-
-      if (!showdown.helper.isUndefined(globals.gUrls[linkId])) {
-        url = globals.gUrls[linkId];
-        if (!showdown.helper.isUndefined(globals.gTitles[linkId])) {
-          title = globals.gTitles[linkId];
-        }
-      } else {
-        if (wholeMatch.search(/\(\s*\)$/m) > -1) {
-          // Special case for explicit empty url
-          url = '';
-        } else {
-          return wholeMatch;
-        }
-      }
-    }
-
-    //url = showdown.helper.escapeCharacters(url, '*_', false); // replaced line to improve performance
-    url = url.replace(showdown.helper.regexes.asteriskAndDash, showdown.helper.escapeCharactersCallback);
-
-    var result = '<a href="' + url + '"';
-
-    if (title !== '' && title !== null) {
-      title = title.replace(/"/g, '&quot;');
-      //title = showdown.helper.escapeCharacters(title, '*_', false); // replaced line to improve performance
-      title = title.replace(showdown.helper.regexes.asteriskAndDash, showdown.helper.escapeCharactersCallback);
-      result += ' title="' + title + '"';
-    }
-
-    result += '>' + linkText + '</a>';
-
-    return result;
-  };
-
-  // First, handle reference-style links: [link text] [id]
-  text = text.replace(/(\[((?:\[[^\]]*]|[^\[\]])*)][ ]?(?:\n[ ]*)?\[(.*?)])()()()()/g, writeAnchorTag);
-
-  // Next, inline-style links: [link text](url "optional title")
-  text = text.replace(/(\[((?:\[[^\]]*]|[^\[\]])*)]\([ \t]*()<?(.*?(?:\(.*?\).*?)?)>?[ \t]*((['"])(.*?)\6[ \t]*)?\))/g,
-                      writeAnchorTag);
-
-  // handle reference-style shortcuts: [link text]
-  // These must come last in case you've also got [link test][1]
-  // or [link test](/foo)
-  text = text.replace(/(\[([^\[\]]+)])()()()()()/g, writeAnchorTag);
-
-  // Lastly handle GithubMentions if option is enabled
-  if (options.ghMentions) {
-    text = text.replace(/(^|\s)(\\)?(@([a-z\d\-]+))(?=[.!?;,[\]()]|\s|$)/gmi, function (wm, st, escape, mentions, username) {
-      if (escape === '\\') {
-        return st + mentions;
-      }
-
-      //check if options.ghMentionsLink is a string
-      if (!showdown.helper.isString(options.ghMentionsLink)) {
-        throw new Error('ghMentionsLink option must be a string');
-      }
-      var lnk = options.ghMentionsLink.replace(/\{u}/g, username);
-      return st + '<a href="' + lnk + '">' + mentions + '</a>';
-    });
-  }
-
-  text = globals.converter._dispatch('anchors.after', text, options, globals);
-  return text;
-});
-
-showdown.subParser('autoLinks', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('autoLinks.before', text, options, globals);
-
-  var simpleURLRegex  = /\b(((https?|ftp|dict):\/\/|www\.)[^'">\s]+\.[^'">\s]+)()(?=\s|$)(?!["<>])/gi,
-      simpleURLRegex2 = /\b(((https?|ftp|dict):\/\/|www\.)[^'">\s]+\.[^'">\s]+?)([.!?()]?)(?=\s|$)(?!["<>])/gi,
-      delimUrlRegex   = /<(((https?|ftp|dict):\/\/|www\.)[^'">\s]+)>/gi,
-      simpleMailRegex = /(^|\s)(?:mailto:)?([A-Za-z0-9!#$%&'*+-/=?^_`{|}~.]+@[-a-z0-9]+(\.[-a-z0-9]+)*\.[a-z]+)(?=$|\s)/gmi,
-      delimMailRegex  = /<()(?:mailto:)?([-.\w]+@[-a-z0-9]+(\.[-a-z0-9]+)*\.[a-z]+)>/gi;
-
-  text = text.replace(delimUrlRegex, replaceLink);
-  text = text.replace(delimMailRegex, replaceMail);
-  // simpleURLRegex  = /\b(((https?|ftp|dict):\/\/|www\.)[-.+~:?#@!$&'()*,;=[\]\w]+)\b/gi,
-  // Email addresses: <address@domain.foo>
-
-  if (options.simplifiedAutoLink) {
-    if (options.excludeTrailingPunctuationFromURLs) {
-      text = text.replace(simpleURLRegex2, replaceLink);
-    } else {
-      text = text.replace(simpleURLRegex, replaceLink);
-    }
-    text = text.replace(simpleMailRegex, replaceMail);
-  }
-
-  function replaceLink (wm, link, m2, m3, trailingPunctuation) {
-    var lnkTxt = link,
-        append = '';
-    if (/^www\./i.test(link)) {
-      link = link.replace(/^www\./i, 'http://www.');
-    }
-    if (options.excludeTrailingPunctuationFromURLs && trailingPunctuation) {
-      append = trailingPunctuation;
-    }
-    return '<a href="' + link + '">' + lnkTxt + '</a>' + append;
-  }
-
-  function replaceMail (wholeMatch, b, mail) {
-    var href = 'mailto:';
-    b = b || '';
-    mail = showdown.subParser('unescapeSpecialChars')(mail, options, globals);
-    if (options.encodeEmails) {
-      href = showdown.helper.encodeEmailAddress(href + mail);
-      mail = showdown.helper.encodeEmailAddress(mail);
-    } else {
-      href = href + mail;
-    }
-    return b + '<a href="' + href + '">' + mail + '</a>';
-  }
-
-  text = globals.converter._dispatch('autoLinks.after', text, options, globals);
-
-  return text;
-});
-
-/**
- * These are all the transformations that form block-level
- * tags like paragraphs, headers, and list items.
- */
-showdown.subParser('blockGamut', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('blockGamut.before', text, options, globals);
-
-  // we parse blockquotes first so that we can have headings and hrs
-  // inside blockquotes
-  text = showdown.subParser('blockQuotes')(text, options, globals);
-  text = showdown.subParser('headers')(text, options, globals);
-
-  // Do Horizontal Rules:
-  text = showdown.subParser('horizontalRule')(text, options, globals);
-
-  text = showdown.subParser('lists')(text, options, globals);
-  text = showdown.subParser('codeBlocks')(text, options, globals);
-  text = showdown.subParser('tables')(text, options, globals);
-
-  // We already ran _HashHTMLBlocks() before, in Markdown(), but that
-  // was to escape raw HTML in the original Markdown source. This time,
-  // we're escaping the markup we've just created, so that we don't wrap
-  // <p> tags around block-level tags.
-  text = showdown.subParser('hashHTMLBlocks')(text, options, globals);
-  text = showdown.subParser('paragraphs')(text, options, globals);
-
-  text = globals.converter._dispatch('blockGamut.after', text, options, globals);
-
-  return text;
-});
-
-showdown.subParser('blockQuotes', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('blockQuotes.before', text, options, globals);
-
-  text = text.replace(/((^ {0,3}>[ \t]?.+\n(.+\n)*\n*)+)/gm, function (wholeMatch, m1) {
-    var bq = m1;
-
-    // attacklab: hack around Konqueror 3.5.4 bug:
-    // "----------bug".replace(/^-/g,"") == "bug"
-    bq = bq.replace(/^[ \t]*>[ \t]?/gm, '¨0'); // trim one level of quoting
-
-    // attacklab: clean up hack
-    bq = bq.replace(/¨0/g, '');
-
-    bq = bq.replace(/^[ \t]+$/gm, ''); // trim whitespace-only lines
-    bq = showdown.subParser('githubCodeBlocks')(bq, options, globals);
-    bq = showdown.subParser('blockGamut')(bq, options, globals); // recurse
-
-    bq = bq.replace(/(^|\n)/g, '$1  ');
-    // These leading spaces screw with <pre> content, so we need to fix that:
-    bq = bq.replace(/(\s*<pre>[^\r]+?<\/pre>)/gm, function (wholeMatch, m1) {
-      var pre = m1;
-      // attacklab: hack around Konqueror 3.5.4 bug:
-      pre = pre.replace(/^  /mg, '¨0');
-      pre = pre.replace(/¨0/g, '');
-      return pre;
-    });
-
-    return showdown.subParser('hashBlock')('<blockquote>\n' + bq + '\n</blockquote>', options, globals);
-  });
-
-  text = globals.converter._dispatch('blockQuotes.after', text, options, globals);
-  return text;
-});
-
-/**
- * Process Markdown `<pre><code>` blocks.
- */
-showdown.subParser('codeBlocks', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('codeBlocks.before', text, options, globals);
-
-  // sentinel workarounds for lack of \A and \Z, safari\khtml bug
-  text += '¨0';
-
-  var pattern = /(?:\n\n|^)((?:(?:[ ]{4}|\t).*\n+)+)(\n*[ ]{0,3}[^ \t\n]|(?=¨0))/g;
-  text = text.replace(pattern, function (wholeMatch, m1, m2) {
-    var codeblock = m1,
-        nextChar = m2,
-        end = '\n';
-
-    codeblock = showdown.subParser('outdent')(codeblock, options, globals);
-    codeblock = showdown.subParser('encodeCode')(codeblock, options, globals);
-    codeblock = showdown.subParser('detab')(codeblock, options, globals);
-    codeblock = codeblock.replace(/^\n+/g, ''); // trim leading newlines
-    codeblock = codeblock.replace(/\n+$/g, ''); // trim trailing newlines
-
-    if (options.omitExtraWLInCodeBlocks) {
-      end = '';
-    }
-
-    codeblock = '<pre><code>' + codeblock + end + '</code></pre>';
-
-    return showdown.subParser('hashBlock')(codeblock, options, globals) + nextChar;
-  });
-
-  // strip sentinel
-  text = text.replace(/¨0/, '');
-
-  text = globals.converter._dispatch('codeBlocks.after', text, options, globals);
-  return text;
-});
-
-/**
- *
- *   *  Backtick quotes are used for <code></code> spans.
- *
- *   *  You can use multiple backticks as the delimiters if you want to
- *     include literal backticks in the code span. So, this input:
- *
- *         Just type ``foo `bar` baz`` at the prompt.
- *
- *       Will translate to:
- *
- *         <p>Just type <code>foo `bar` baz</code> at the prompt.</p>
- *
- *    There's no arbitrary limit to the number of backticks you
- *    can use as delimters. If you need three consecutive backticks
- *    in your code, use four for delimiters, etc.
- *
- *  *  You can use spaces to get literal backticks at the edges:
- *
- *         ... type `` `bar` `` ...
- *
- *       Turns to:
- *
- *         ... type <code>`bar`</code> ...
- */
-showdown.subParser('codeSpans', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('codeSpans.before', text, options, globals);
-
-  if (typeof(text) === 'undefined') {
-    text = '';
-  }
-  text = text.replace(/(^|[^\\])(`+)([^\r]*?[^`])\2(?!`)/gm,
-    function (wholeMatch, m1, m2, m3) {
-      var c = m3;
-      c = c.replace(/^([ \t]*)/g, '');	// leading whitespace
-      c = c.replace(/[ \t]*$/g, '');	// trailing whitespace
-      c = showdown.subParser('encodeCode')(c, options, globals);
-      return m1 + '<code>' + c + '</code>';
-    }
-  );
-
-  text = globals.converter._dispatch('codeSpans.after', text, options, globals);
-  return text;
-});
-
-/**
- * Convert all tabs to spaces
- */
-showdown.subParser('detab', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('detab.before', text, options, globals);
-
-  // expand first n-1 tabs
-  text = text.replace(/\t(?=\t)/g, '    '); // g_tab_width
-
-  // replace the nth with two sentinels
-  text = text.replace(/\t/g, '¨A¨B');
-
-  // use the sentinel to anchor our regex so it doesn't explode
-  text = text.replace(/¨B(.+?)¨A/g, function (wholeMatch, m1) {
-    var leadingText = m1,
-        numSpaces = 4 - leadingText.length % 4;  // g_tab_width
-
-    // there *must* be a better way to do this:
-    for (var i = 0; i < numSpaces; i++) {
-      leadingText += ' ';
-    }
-
-    return leadingText;
-  });
-
-  // clean up sentinels
-  text = text.replace(/¨A/g, '    ');  // g_tab_width
-  text = text.replace(/¨B/g, '');
-
-  text = globals.converter._dispatch('detab.after', text, options, globals);
-  return text;
-});
-
-/**
- * Smart processing for ampersands and angle brackets that need to be encoded.
- */
-showdown.subParser('encodeAmpsAndAngles', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('encodeAmpsAndAngles.before', text, options, globals);
-
-  // Ampersand-encoding based entirely on Nat Irons's Amputator MT plugin:
-  // http://bumppo.net/projects/amputator/
-  text = text.replace(/&(?!#?[xX]?(?:[0-9a-fA-F]+|\w+);)/g, '&amp;');
-
-  // Encode naked <'s
-  text = text.replace(/<(?![a-z\/?$!])/gi, '&lt;');
-
-  // Encode <
-  text = text.replace(/</g, '&lt;');
-
-  // Encode >
-  text = text.replace(/>/g, '&gt;');
-
-  text = globals.converter._dispatch('encodeAmpsAndAngles.after', text, options, globals);
-  return text;
-});
-
-/**
- * Returns the string, with after processing the following backslash escape sequences.
- *
- * attacklab: The polite way to do this is with the new escapeCharacters() function:
- *
- *    text = escapeCharacters(text,"\\",true);
- *    text = escapeCharacters(text,"`*_{}[]()>#+-.!",true);
- *
- * ...but we're sidestepping its use of the (slow) RegExp constructor
- * as an optimization for Firefox.  This function gets called a LOT.
- */
-showdown.subParser('encodeBackslashEscapes', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('encodeBackslashEscapes.before', text, options, globals);
-
-  text = text.replace(/\\(\\)/g, showdown.helper.escapeCharactersCallback);
-  text = text.replace(/\\([`*_{}\[\]()>#+.!~=-])/g, showdown.helper.escapeCharactersCallback);
-
-  text = globals.converter._dispatch('encodeBackslashEscapes.after', text, options, globals);
-  return text;
-});
-
-/**
- * Encode/escape certain characters inside Markdown code runs.
- * The point is that in code, these characters are literals,
- * and lose their special Markdown meanings.
- */
-showdown.subParser('encodeCode', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('encodeCode.before', text, options, globals);
-
-  // Encode all ampersands; HTML entities are not
-  // entities within a Markdown code span.
-  text = text
-    .replace(/&/g, '&amp;')
-  // Do the angle bracket song and dance:
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  // Now, escape characters that are magic in Markdown:
-    .replace(/([*_{}\[\]\\=~-])/g, showdown.helper.escapeCharactersCallback);
-
-  text = globals.converter._dispatch('encodeCode.after', text, options, globals);
-  return text;
-});
-
-/**
- * Within tags -- meaning between < and > -- encode [\ ` * _ ~ =] so they
- * don't conflict with their use in Markdown for code, italics and strong.
- */
-showdown.subParser('escapeSpecialCharsWithinTagAttributes', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('escapeSpecialCharsWithinTagAttributes.before', text, options, globals);
-
-  // Build a regex to find HTML tags and comments.  See Friedl's
-  // "Mastering Regular Expressions", 2nd Ed., pp. 200-201.
-  var regex = /(<[a-z\/!$]("[^"]*"|'[^']*'|[^'">])*>|<!(--.*?--\s*)+>)/gi;
-
-  text = text.replace(regex, function (wholeMatch) {
-    return wholeMatch
-      .replace(/(.)<\/?code>(?=.)/g, '$1`')
-      .replace(/([\\`*_~=])/g, showdown.helper.escapeCharactersCallback);
-  });
-
-  text = globals.converter._dispatch('escapeSpecialCharsWithinTagAttributes.after', text, options, globals);
-  return text;
-});
-
-/**
- * Handle github codeblocks prior to running HashHTML so that
- * HTML contained within the codeblock gets escaped properly
- * Example:
- * ```ruby
- *     def hello_world(x)
- *       puts "Hello, #{x}"
- *     end
- * ```
- */
-showdown.subParser('githubCodeBlocks', function (text, options, globals) {
-  'use strict';
-
-  // early exit if option is not enabled
-  if (!options.ghCodeBlocks) {
-    return text;
-  }
-
-  text = globals.converter._dispatch('githubCodeBlocks.before', text, options, globals);
-
-  text += '¨0';
-
-  text = text.replace(/(?:^|\n)```(.*)\n([\s\S]*?)\n```/g, function (wholeMatch, language, codeblock) {
-    var end = (options.omitExtraWLInCodeBlocks) ? '' : '\n';
-
-    // First parse the github code block
-    codeblock = showdown.subParser('encodeCode')(codeblock, options, globals);
-    codeblock = showdown.subParser('detab')(codeblock, options, globals);
-    codeblock = codeblock.replace(/^\n+/g, ''); // trim leading newlines
-    codeblock = codeblock.replace(/\n+$/g, ''); // trim trailing whitespace
-
-    codeblock = '<pre><code' + (language ? ' class="' + language + ' language-' + language + '"' : '') + '>' + codeblock + end + '</code></pre>';
-
-    codeblock = showdown.subParser('hashBlock')(codeblock, options, globals);
-
-    // Since GHCodeblocks can be false positives, we need to
-    // store the primitive text and the parsed text in a global var,
-    // and then return a token
-    return '\n\n¨G' + (globals.ghCodeBlocks.push({text: wholeMatch, codeblock: codeblock}) - 1) + 'G\n\n';
-  });
-
-  // attacklab: strip sentinel
-  text = text.replace(/¨0/, '');
-
-  return globals.converter._dispatch('githubCodeBlocks.after', text, options, globals);
-});
-
-showdown.subParser('hashBlock', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('hashBlock.before', text, options, globals);
-  text = text.replace(/(^\n+|\n+$)/g, '');
-  text = '\n\n¨K' + (globals.gHtmlBlocks.push(text) - 1) + 'K\n\n';
-  text = globals.converter._dispatch('hashBlock.after', text, options, globals);
-  return text;
-});
-
-/**
- * Hash and escape <code> elements that should not be parsed as markdown
- */
-showdown.subParser('hashCodeTags', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('hashCodeTags.before', text, options, globals);
-
-  var repFunc = function (wholeMatch, match, left, right) {
-    var codeblock = left + showdown.subParser('encodeCode')(match, options, globals) + right;
-    return '¨C' + (globals.gHtmlSpans.push(codeblock) - 1) + 'C';
-  };
-
-  // Hash naked <code>
-  text = showdown.helper.replaceRecursiveRegExp(text, repFunc, '<code\\b[^>]*>', '</code>', 'gim');
-
-  text = globals.converter._dispatch('hashCodeTags.after', text, options, globals);
-  return text;
-});
-
-showdown.subParser('hashElement', function (text, options, globals) {
-  'use strict';
-
-  return function (wholeMatch, m1) {
-    var blockText = m1;
-
-    // Undo double lines
-    blockText = blockText.replace(/\n\n/g, '\n');
-    blockText = blockText.replace(/^\n/, '');
-
-    // strip trailing blank lines
-    blockText = blockText.replace(/\n+$/g, '');
-
-    // Replace the element text with a marker ("¨KxK" where x is its key)
-    blockText = '\n\n¨K' + (globals.gHtmlBlocks.push(blockText) - 1) + 'K\n\n';
-
-    return blockText;
-  };
-});
-
-showdown.subParser('hashHTMLBlocks', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('hashHTMLBlocks.before', text, options, globals);
-
-  var blockTags = [
-        'pre',
-        'div',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'blockquote',
-        'table',
-        'dl',
-        'ol',
-        'ul',
-        'script',
-        'noscript',
-        'form',
-        'fieldset',
-        'iframe',
-        'math',
-        'style',
-        'section',
-        'header',
-        'footer',
-        'nav',
-        'article',
-        'aside',
-        'address',
-        'audio',
-        'canvas',
-        'figure',
-        'hgroup',
-        'output',
-        'video',
-        'p'
-      ],
-      repFunc = function (wholeMatch, match, left, right) {
-        var txt = wholeMatch;
-        // check if this html element is marked as markdown
-        // if so, it's contents should be parsed as markdown
-        if (left.search(/\bmarkdown\b/) !== -1) {
-          txt = left + globals.converter.makeHtml(match) + right;
-        }
-        return '\n\n¨K' + (globals.gHtmlBlocks.push(txt) - 1) + 'K\n\n';
-      };
-
-  for (var i = 0; i < blockTags.length; ++i) {
-    text = showdown.helper.replaceRecursiveRegExp(text, repFunc, '^ {0,3}<' + blockTags[i] + '\\b[^>]*>', '</' + blockTags[i] + '>', 'gim');
-  }
-
-  // HR SPECIAL CASE
-  text = text.replace(/(\n {0,3}(<(hr)\b([^<>])*?\/?>)[ \t]*(?=\n{2,}))/g,
-    showdown.subParser('hashElement')(text, options, globals));
-
-  // Special case for standalone HTML comments
-  text = showdown.helper.replaceRecursiveRegExp(text, function (txt) {
-    return '\n\n¨K' + (globals.gHtmlBlocks.push(txt) - 1) + 'K\n\n';
-  }, '^ {0,3}<!--', '-->', 'gm');
-
-  // PHP and ASP-style processor instructions (<?...?> and <%...%>)
-  text = text.replace(/(?:\n\n)( {0,3}(?:<([?%])[^\r]*?\2>)[ \t]*(?=\n{2,}))/g,
-    showdown.subParser('hashElement')(text, options, globals));
-
-  text = globals.converter._dispatch('hashHTMLBlocks.after', text, options, globals);
-  return text;
-});
-
-/**
- * Hash span elements that should not be parsed as markdown
- */
-showdown.subParser('hashHTMLSpans', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('hashHTMLSpans.before', text, options, globals);
-
-  function hashHTMLSpan (html) {
-    return '¨C' + (globals.gHtmlSpans.push(html) - 1) + 'C';
-  }
-
-  // Hash Self Closing tags
-  text = text.replace(/<[^>]+?\/>/gi, function (wm) {
-    return hashHTMLSpan(wm);
-  });
-
-  // Hash tags without properties
-  text = text.replace(/<([^>]+?)>[\s\S]*?<\/\1>/g, function (wm) {
-    return hashHTMLSpan(wm);
-  });
-
-  // Hash tags with properties
-  text = text.replace(/<([^>]+?)\s[^>]+?>[\s\S]*?<\/\1>/g, function (wm) {
-    return hashHTMLSpan(wm);
-  });
-
-  // Hash self closing tags without />
-  text = text.replace(/<[^>]+?>/gi, function (wm) {
-    return hashHTMLSpan(wm);
-  });
-
-  /*showdown.helper.matchRecursiveRegExp(text, '<code\\b[^>]*>', '</code>', 'gi');*/
-
-  text = globals.converter._dispatch('hashHTMLSpans.after', text, options, globals);
-  return text;
-});
-
-/**
- * Unhash HTML spans
- */
-showdown.subParser('unhashHTMLSpans', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('unhashHTMLSpans.before', text, options, globals);
-
-  for (var i = 0; i < globals.gHtmlSpans.length; ++i) {
-    var repText = globals.gHtmlSpans[i],
-        // limiter to prevent infinite loop (assume 10 as limit for recurse)
-        limit = 0;
-
-    while (/¨C(\d+)C/.test(repText)) {
-      var num = RegExp.$1;
-      repText = repText.replace('¨C' + num + 'C', globals.gHtmlSpans[num]);
-      if (limit === 10) {
-        break;
-      }
-      ++limit;
-    }
-    text = text.replace('¨C' + i + 'C', repText);
-  }
-
-  text = globals.converter._dispatch('unhashHTMLSpans.after', text, options, globals);
-  return text;
-});
-
-/**
- * Hash and escape <pre><code> elements that should not be parsed as markdown
- */
-showdown.subParser('hashPreCodeTags', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('hashPreCodeTags.before', text, options, globals);
-
-  var repFunc = function (wholeMatch, match, left, right) {
-    // encode html entities
-    var codeblock = left + showdown.subParser('encodeCode')(match, options, globals) + right;
-    return '\n\n¨G' + (globals.ghCodeBlocks.push({text: wholeMatch, codeblock: codeblock}) - 1) + 'G\n\n';
-  };
-
-  // Hash <pre><code>
-  text = showdown.helper.replaceRecursiveRegExp(text, repFunc, '^ {0,3}<pre\\b[^>]*>\\s*<code\\b[^>]*>', '^ {0,3}</code>\\s*</pre>', 'gim');
-
-  text = globals.converter._dispatch('hashPreCodeTags.after', text, options, globals);
-  return text;
-});
-
-showdown.subParser('headers', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('headers.before', text, options, globals);
-
-  var headerLevelStart = (isNaN(parseInt(options.headerLevelStart))) ? 1 : parseInt(options.headerLevelStart),
-      ghHeaderId = options.ghCompatibleHeaderId,
-
-  // Set text-style headers:
-  //	Header 1
-  //	========
-  //
-  //	Header 2
-  //	--------
-  //
-      setextRegexH1 = (options.smoothLivePreview) ? /^(.+)[ \t]*\n={2,}[ \t]*\n+/gm : /^(.+)[ \t]*\n=+[ \t]*\n+/gm,
-      setextRegexH2 = (options.smoothLivePreview) ? /^(.+)[ \t]*\n-{2,}[ \t]*\n+/gm : /^(.+)[ \t]*\n-+[ \t]*\n+/gm;
-
-  text = text.replace(setextRegexH1, function (wholeMatch, m1) {
-
-    var spanGamut = showdown.subParser('spanGamut')(m1, options, globals),
-        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m1) + '"',
-        hLevel = headerLevelStart,
-        hashBlock = '<h' + hLevel + hID + '>' + spanGamut + '</h' + hLevel + '>';
-    return showdown.subParser('hashBlock')(hashBlock, options, globals);
-  });
-
-  text = text.replace(setextRegexH2, function (matchFound, m1) {
-    var spanGamut = showdown.subParser('spanGamut')(m1, options, globals),
-        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m1) + '"',
-        hLevel = headerLevelStart + 1,
-        hashBlock = '<h' + hLevel + hID + '>' + spanGamut + '</h' + hLevel + '>';
-    return showdown.subParser('hashBlock')(hashBlock, options, globals);
-  });
-
-  // atx-style headers:
-  //  # Header 1
-  //  ## Header 2
-  //  ## Header 2 with closing hashes ##
-  //  ...
-  //  ###### Header 6
-  //
-  var atxStyle = (options.requireSpaceBeforeHeadingText) ? /^(#{1,6})[ \t]+(.+?)[ \t]*#*\n+/gm : /^(#{1,6})[ \t]*(.+?)[ \t]*#*\n+/gm;
-
-  text = text.replace(atxStyle, function (wholeMatch, m1, m2) {
-    var span = showdown.subParser('spanGamut')(m2, options, globals),
-        hID = (options.noHeaderId) ? '' : ' id="' + headerId(m2) + '"',
-        hLevel = headerLevelStart - 1 + m1.length,
-        header = '<h' + hLevel + hID + '>' + span + '</h' + hLevel + '>';
-
-    return showdown.subParser('hashBlock')(header, options, globals);
-  });
-
-  function headerId (m) {
-    var title;
-    // Prefix id to prevent causing inadvertent pre-existing style matches.
-    if (showdown.helper.isString(options.prefixHeaderId)) {
-      title = options.prefixHeaderId + m;
-    } else if (options.prefixHeaderId === true) {
-      title = 'section ' + m;
-    } else {
-      title = m;
-    }
-
-    if (ghHeaderId) {
-      title = title
-        .replace(/ /g, '-')
-        // replace previously escaped chars (&, ¨ and $)
-        .replace(/&amp;/g, '')
-        .replace(/¨T/g, '')
-        .replace(/¨D/g, '')
-        // replace rest of the chars (&~$ are repeated as they might have been escaped)
-        // borrowed from github's redcarpet (some they should produce similar results)
-        .replace(/[&+$,\/:;=?@"#{}|^¨~\[\]`\\*)(%.!'<>]/g, '')
-        .toLowerCase();
-    } else {
-      title = title
-        .replace(/[^\w]/g, '')
-        .toLowerCase();
-    }
-
-    if (globals.hashLinkCounts[title]) {
-      title = title + '-' + (globals.hashLinkCounts[title]++);
-    } else {
-      globals.hashLinkCounts[title] = 1;
-    }
-    return title;
-  }
-
-  text = globals.converter._dispatch('headers.after', text, options, globals);
-  return text;
-});
-
-/**
- * Turn Markdown link shortcuts into XHTML <a> tags.
- */
-showdown.subParser('horizontalRule', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('horizontalRule.before', text, options, globals);
-
-  var key = showdown.subParser('hashBlock')('<hr />', options, globals);
-  text = text.replace(/^ {0,2}( ?-){3,}[ \t]*$/gm, key);
-  text = text.replace(/^ {0,2}( ?\*){3,}[ \t]*$/gm, key);
-  text = text.replace(/^ {0,2}( ?_){3,}[ \t]*$/gm, key);
-
-  text = globals.converter._dispatch('horizontalRule.after', text, options, globals);
-  return text;
-});
-
-/**
- * Turn Markdown image shortcuts into <img> tags.
- */
-showdown.subParser('images', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('images.before', text, options, globals);
-
-  var inlineRegExp    = /!\[(.*?)]\s?\([ \t]*()<?(\S+?)>?(?: =([*\d]+[A-Za-z%]{0,4})x([*\d]+[A-Za-z%]{0,4}))?[ \t]*(?:(['"])(.*?)\6[ \t]*)?\)/g,
-      referenceRegExp = /!\[([^\]]*?)] ?(?:\n *)?\[(.*?)]()()()()()/g;
-
-  function writeImageTag (wholeMatch, altText, linkId, url, width, height, m5, title) {
-
-    var gUrls   = globals.gUrls,
-        gTitles = globals.gTitles,
-        gDims   = globals.gDimensions;
-
-    linkId = linkId.toLowerCase();
-
-    if (!title) {
-      title = '';
-    }
-
-    if (url === '' || url === null) {
-      if (linkId === '' || linkId === null) {
-        // lower-case and turn embedded newlines into spaces
-        linkId = altText.toLowerCase().replace(/ ?\n/g, ' ');
-      }
-      url = '#' + linkId;
-
-      if (!showdown.helper.isUndefined(gUrls[linkId])) {
-        url = gUrls[linkId];
-        if (!showdown.helper.isUndefined(gTitles[linkId])) {
-          title = gTitles[linkId];
-        }
-        if (!showdown.helper.isUndefined(gDims[linkId])) {
-          width = gDims[linkId].width;
-          height = gDims[linkId].height;
-        }
-      } else {
-        return wholeMatch;
-      }
-    }
-
-    altText = altText
-      .replace(/"/g, '&quot;')
-    //altText = showdown.helper.escapeCharacters(altText, '*_', false);
-      .replace(showdown.helper.regexes.asteriskAndDash, showdown.helper.escapeCharactersCallback);
-    //url = showdown.helper.escapeCharacters(url, '*_', false);
-    url = url.replace(showdown.helper.regexes.asteriskAndDash, showdown.helper.escapeCharactersCallback);
-    var result = '<img src="' + url + '" alt="' + altText + '"';
-
-    if (title) {
-      title = title
-        .replace(/"/g, '&quot;')
-      //title = showdown.helper.escapeCharacters(title, '*_', false);
-        .replace(showdown.helper.regexes.asteriskAndDash, showdown.helper.escapeCharactersCallback);
-      result += ' title="' + title + '"';
-    }
-
-    if (width && height) {
-      width  = (width === '*') ? 'auto' : width;
-      height = (height === '*') ? 'auto' : height;
-
-      result += ' width="' + width + '"';
-      result += ' height="' + height + '"';
-    }
-
-    result += ' />';
-
-    return result;
-  }
-
-  // First, handle reference-style labeled images: ![alt text][id]
-  text = text.replace(referenceRegExp, writeImageTag);
-
-  // Next, handle inline images:  ![alt text](url =<width>x<height> "optional title")
-  text = text.replace(inlineRegExp, writeImageTag);
-
-  text = globals.converter._dispatch('images.after', text, options, globals);
-  return text;
-});
-
-showdown.subParser('italicsAndBold', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('italicsAndBold.before', text, options, globals);
-
-  // it's faster to have 3 separate regexes for each case than have just one
-  // because of backtracing, in some cases, it could lead to an exponential effect
-  // called "catastrophic backtrace". Ominous!
-
-  // Parse underscores
-  if (options.literalMidWordUnderscores) {
-    text = text.replace(/\b___(\S[\s\S]*)___\b/g, '<strong><em>$1</em></strong>');
-    text = text.replace(/\b__(\S[\s\S]*)__\b/g, '<strong>$1</strong>');
-    text = text.replace(/\b_(\S[\s\S]*?)_\b/g, '<em>$1</em>');
-  } else {
-    text = text.replace(/___(\S[\s\S]*?)___/g, function (wm, m) {
-      return (/\S$/.test(m)) ? '<strong><em>' + m + '</em></strong>' : wm;
-    });
-    text = text.replace(/__(\S[\s\S]*?)__/g, function (wm, m) {
-      return (/\S$/.test(m)) ? '<strong>' + m + '</strong>' : wm;
-    });
-    text = text.replace(/_([^\s_][\s\S]*?)_/g, function (wm, m) {
-      // !/^_[^_]/.test(m) - test if it doesn't start with __ (since it seems redundant, we removed it)
-      return (/\S$/.test(m)) ? '<em>' + m + '</em>' : wm;
-    });
-  }
-
-  // Now parse asterisks
-  text = text.replace(/\*\*\*(\S[\s\S]*?)\*\*\*/g, function (wm, m) {
-    return (/\S$/.test(m)) ? '<strong><em>' + m + '</em></strong>' : wm;
-  });
-  text = text.replace(/\*\*(\S[\s\S]*?)\*\*/g, function (wm, m) {
-    return (/\S$/.test(m)) ? '<strong>' + m + '</strong>' : wm;
-  });
-  text = text.replace(/\*([^\s*][\s\S]*?)\*/g, function (wm, m) {
-    // !/^\*[^*]/.test(m) - test if it doesn't start with ** (since it seems redundant, we removed it)
-    return (/\S$/.test(m)) ? '<em>' + m + '</em>' : wm;
-  });
-
-  text = globals.converter._dispatch('italicsAndBold.after', text, options, globals);
-  return text;
-});
-
-/**
- * Form HTML ordered (numbered) and unordered (bulleted) lists.
- */
-showdown.subParser('lists', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('lists.before', text, options, globals);
-
-  /**
-   * Process the contents of a single ordered or unordered list, splitting it
-   * into individual list items.
-   * @param {string} listStr
-   * @param {boolean} trimTrailing
-   * @returns {string}
-   */
-  function processListItems (listStr, trimTrailing) {
-    // The $g_list_level global keeps track of when we're inside a list.
-    // Each time we enter a list, we increment it; when we leave a list,
-    // we decrement. If it's zero, we're not in a list anymore.
-    //
-    // We do this because when we're not inside a list, we want to treat
-    // something like this:
-    //
-    //    I recommend upgrading to version
-    //    8. Oops, now this line is treated
-    //    as a sub-list.
-    //
-    // As a single paragraph, despite the fact that the second line starts
-    // with a digit-period-space sequence.
-    //
-    // Whereas when we're inside a list (or sub-list), that line will be
-    // treated as the start of a sub-list. What a kludge, huh? This is
-    // an aspect of Markdown's syntax that's hard to parse perfectly
-    // without resorting to mind-reading. Perhaps the solution is to
-    // change the syntax rules such that sub-lists must start with a
-    // starting cardinal number; e.g. "1." or "a.".
-    globals.gListLevel++;
-
-    // trim trailing blank lines:
-    listStr = listStr.replace(/\n{2,}$/, '\n');
-
-    // attacklab: add sentinel to emulate \z
-    listStr += '¨0';
-
-    var rgx = /(\n)?(^ {0,3})([*+-]|\d+[.])[ \t]+((\[(x|X| )?])?[ \t]*[^\r]+?(\n{1,2}))(?=\n*(¨0| {0,3}([*+-]|\d+[.])[ \t]+))/gm,
-        isParagraphed = (/\n[ \t]*\n(?!¨0)/.test(listStr));
-
-    // Since version 1.5, nesting sublists requires 4 spaces (or 1 tab) indentation,
-    // which is a syntax breaking change
-    // activating this option reverts to old behavior
-    if (options.disableForced4SpacesIndentedSublists) {
-      rgx = /(\n)?(^ {0,3})([*+-]|\d+[.])[ \t]+((\[(x|X| )?])?[ \t]*[^\r]+?(\n{1,2}))(?=\n*(¨0|\2([*+-]|\d+[.])[ \t]+))/gm;
-    }
-
-    listStr = listStr.replace(rgx, function (wholeMatch, m1, m2, m3, m4, taskbtn, checked) {
-      checked = (checked && checked.trim() !== '');
-
-      var item = showdown.subParser('outdent')(m4, options, globals),
-          bulletStyle = '';
-
-      // Support for github tasklists
-      if (taskbtn && options.tasklists) {
-        bulletStyle = ' class="task-list-item" style="list-style-type: none;"';
-        item = item.replace(/^[ \t]*\[(x|X| )?]/m, function () {
-          var otp = '<input type="checkbox" disabled style="margin: 0px 0.35em 0.25em -1.6em; vertical-align: middle;"';
-          if (checked) {
-            otp += ' checked';
-          }
-          otp += '>';
-          return otp;
-        });
-      }
-
-      // ISSUE #312
-      // This input: - - - a
-      // causes trouble to the parser, since it interprets it as:
-      // <ul><li><li><li>a</li></li></li></ul>
-      // instead of:
-      // <ul><li>- - a</li></ul>
-      // So, to prevent it, we will put a marker (¨A)in the beginning of the line
-      // Kind of hackish/monkey patching, but seems more effective than overcomplicating the list parser
-      item = item.replace(/^([-*+]|\d\.)[ \t]+[\S\n ]*/g, function (wm2) {
-        return '¨A' + wm2;
-      });
-
-      // m1 - Leading line or
-      // Has a double return (multi paragraph) or
-      // Has sublist
-      if (m1 || (item.search(/\n{2,}/) > -1)) {
-        item = showdown.subParser('githubCodeBlocks')(item, options, globals);
-        item = showdown.subParser('blockGamut')(item, options, globals);
-      } else {
-        // Recursion for sub-lists:
-        item = showdown.subParser('lists')(item, options, globals);
-        item = item.replace(/\n$/, ''); // chomp(item)
-        item = showdown.subParser('hashHTMLBlocks')(item, options, globals);
-        // Colapse double linebreaks
-        item = item.replace(/\n\n+/g, '\n\n');
-        // replace double linebreaks with a placeholder
-        item = item.replace(/\n\n/g, '¨B');
-        if (isParagraphed) {
-          item = showdown.subParser('paragraphs')(item, options, globals);
-        } else {
-          item = showdown.subParser('spanGamut')(item, options, globals);
-        }
-        item = item.replace(/¨B/g, '\n\n');
-      }
-
-      // now we need to remove the marker (¨A)
-      item = item.replace('¨A', '');
-      // we can finally wrap the line in list item tags
-      item =  '<li' + bulletStyle + '>' + item + '</li>\n';
-
-      return item;
-    });
-
-    // attacklab: strip sentinel
-    listStr = listStr.replace(/¨0/g, '');
-
-    globals.gListLevel--;
-
-    if (trimTrailing) {
-      listStr = listStr.replace(/\s+$/, '');
-    }
-
-    return listStr;
-  }
-
-  /**
-   * Check and parse consecutive lists (better fix for issue #142)
-   * @param {string} list
-   * @param {string} listType
-   * @param {boolean} trimTrailing
-   * @returns {string}
-   */
-  function parseConsecutiveLists (list, listType, trimTrailing) {
-    // check if we caught 2 or more consecutive lists by mistake
-    // we use the counterRgx, meaning if listType is UL we look for OL and vice versa
-    var olRgx = (options.disableForced4SpacesIndentedSublists) ? /^ ?\d+\.[ \t]/gm : /^ {0,3}\d+\.[ \t]/gm,
-        ulRgx = (options.disableForced4SpacesIndentedSublists) ? /^ ?[*+-][ \t]/gm : /^ {0,3}[*+-][ \t]/gm,
-        counterRxg = (listType === 'ul') ? olRgx : ulRgx,
-        result = '';
-
-    if (list.search(counterRxg) !== -1) {
-      (function parseCL (txt) {
-        var pos = txt.search(counterRxg);
-        if (pos !== -1) {
-          // slice
-          result += '\n<' + listType + '>\n' + processListItems(txt.slice(0, pos), !!trimTrailing) + '</' + listType + '>\n';
-
-          // invert counterType and listType
-          listType = (listType === 'ul') ? 'ol' : 'ul';
-          counterRxg = (listType === 'ul') ? olRgx : ulRgx;
-
-          //recurse
-          parseCL(txt.slice(pos));
-        } else {
-          result += '\n<' + listType + '>\n' + processListItems(txt, !!trimTrailing) + '</' + listType + '>\n';
-        }
-      })(list);
-    } else {
-      result = '\n<' + listType + '>\n' + processListItems(list, !!trimTrailing) + '</' + listType + '>\n';
-    }
-
-    return result;
-  }
-
-  // add sentinel to hack around khtml/safari bug:
-  // http://bugs.webkit.org/show_bug.cgi?id=11231
-  text += '¨0';
-
-  if (globals.gListLevel) {
-    text = text.replace(/^(( {0,3}([*+-]|\d+[.])[ \t]+)[^\r]+?(¨0|\n{2,}(?=\S)(?![ \t]*(?:[*+-]|\d+[.])[ \t]+)))/gm,
-      function (wholeMatch, list, m2) {
-        var listType = (m2.search(/[*+-]/g) > -1) ? 'ul' : 'ol';
-        return parseConsecutiveLists(list, listType, true);
-      }
-    );
-  } else {
-    text = text.replace(/(\n\n|^\n?)(( {0,3}([*+-]|\d+[.])[ \t]+)[^\r]+?(¨0|\n{2,}(?=\S)(?![ \t]*(?:[*+-]|\d+[.])[ \t]+)))/gm,
-      function (wholeMatch, m1, list, m3) {
-        var listType = (m3.search(/[*+-]/g) > -1) ? 'ul' : 'ol';
-        return parseConsecutiveLists(list, listType, false);
-      }
-    );
-  }
-
-  // strip sentinel
-  text = text.replace(/¨0/, '');
-  text = globals.converter._dispatch('lists.after', text, options, globals);
-  return text;
-});
-
-/**
- * Remove one level of line-leading tabs or spaces
- */
-showdown.subParser('outdent', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('outdent.before', text, options, globals);
-
-  // attacklab: hack around Konqueror 3.5.4 bug:
-  // "----------bug".replace(/^-/g,"") == "bug"
-  text = text.replace(/^(\t|[ ]{1,4})/gm, '¨0'); // attacklab: g_tab_width
-
-  // attacklab: clean up hack
-  text = text.replace(/¨0/g, '');
-
-  text = globals.converter._dispatch('outdent.after', text, options, globals);
-  return text;
-});
-
-/**
- *
- */
-showdown.subParser('paragraphs', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('paragraphs.before', text, options, globals);
-  // Strip leading and trailing lines:
-  text = text.replace(/^\n+/g, '');
-  text = text.replace(/\n+$/g, '');
-
-  var grafs = text.split(/\n{2,}/g),
-      grafsOut = [],
-      end = grafs.length; // Wrap <p> tags
-
-  for (var i = 0; i < end; i++) {
-    var str = grafs[i];
-    // if this is an HTML marker, copy it
-    if (str.search(/¨(K|G)(\d+)\1/g) >= 0) {
-      grafsOut.push(str);
-
-    // test for presence of characters to prevent empty lines being parsed
-    // as paragraphs (resulting in undesired extra empty paragraphs)
-    } else if (str.search(/\S/) >= 0) {
-      str = showdown.subParser('spanGamut')(str, options, globals);
-      str = str.replace(/^([ \t]*)/g, '<p>');
-      str += '</p>';
-      grafsOut.push(str);
-    }
-  }
-
-  /** Unhashify HTML blocks */
-  end = grafsOut.length;
-  for (i = 0; i < end; i++) {
-    var blockText = '',
-        grafsOutIt = grafsOut[i],
-        codeFlag = false;
-    // if this is a marker for an html block...
-    // use RegExp.test instead of string.search because of QML bug
-    while (/¨(K|G)(\d+)\1/.test(grafsOutIt)) {
-      var delim = RegExp.$1,
-          num   = RegExp.$2;
-
-      if (delim === 'K') {
-        blockText = globals.gHtmlBlocks[num];
-      } else {
-        // we need to check if ghBlock is a false positive
-        if (codeFlag) {
-          // use encoded version of all text
-          blockText = showdown.subParser('encodeCode')(globals.ghCodeBlocks[num].text, options, globals);
-        } else {
-          blockText = globals.ghCodeBlocks[num].codeblock;
-        }
-      }
-      blockText = blockText.replace(/\$/g, '$$$$'); // Escape any dollar signs
-
-      grafsOutIt = grafsOutIt.replace(/(\n\n)?¨(K|G)\d+\2(\n\n)?/, blockText);
-      // Check if grafsOutIt is a pre->code
-      if (/^<pre\b[^>]*>\s*<code\b[^>]*>/.test(grafsOutIt)) {
-        codeFlag = true;
-      }
-    }
-    grafsOut[i] = grafsOutIt;
-  }
-  text = grafsOut.join('\n');
-  // Strip leading and trailing lines:
-  text = text.replace(/^\n+/g, '');
-  text = text.replace(/\n+$/g, '');
-  return globals.converter._dispatch('paragraphs.after', text, options, globals);
-});
-
-/**
- * Run extension
- */
-showdown.subParser('runExtension', function (ext, text, options, globals) {
-  'use strict';
-
-  if (ext.filter) {
-    text = ext.filter(text, globals.converter, options);
-
-  } else if (ext.regex) {
-    // TODO remove this when old extension loading mechanism is deprecated
-    var re = ext.regex;
-    if (!(re instanceof RegExp)) {
-      re = new RegExp(re, 'g');
-    }
-    text = text.replace(re, ext.replace);
-  }
-
-  return text;
-});
-
-/**
- * These are all the transformations that occur *within* block-level
- * tags like paragraphs, headers, and list items.
- */
-showdown.subParser('spanGamut', function (text, options, globals) {
-  'use strict';
-
-  text = globals.converter._dispatch('spanGamut.before', text, options, globals);
-  text = showdown.subParser('codeSpans')(text, options, globals);
-  text = showdown.subParser('escapeSpecialCharsWithinTagAttributes')(text, options, globals);
-  text = showdown.subParser('encodeBackslashEscapes')(text, options, globals);
-
-  // Process anchor and image tags. Images must come first,
-  // because ![foo][f] looks like an anchor.
-  text = showdown.subParser('images')(text, options, globals);
-  text = showdown.subParser('anchors')(text, options, globals);
-
-  // Make links out of things like `<http://example.com/>`
-  // Must come after _DoAnchors(), because you can use < and >
-  // delimiters in inline links like [this](<url>).
-  text = showdown.subParser('autoLinks')(text, options, globals);
-  text = showdown.subParser('italicsAndBold')(text, options, globals);
-  text = showdown.subParser('strikethrough')(text, options, globals);
-
-  // we need to hash HTML tags inside spans
-  text = showdown.subParser('hashHTMLSpans')(text, options, globals);
-
-  // now we encode amps and angles
-  text = showdown.subParser('encodeAmpsAndAngles')(text, options, globals);
-
-  // Do hard breaks
-  if (options.simpleLineBreaks) {
-    // GFM style hard breaks
-    text = text.replace(/\n/g, '<br />\n');
-  } else {
-    // Vanilla hard breaks
-    text = text.replace(/  +\n/g, '<br />\n');
-  }
-
-  text = globals.converter._dispatch('spanGamut.after', text, options, globals);
-  return text;
-});
-
-showdown.subParser('strikethrough', function (text, options, globals) {
-  'use strict';
-
-  if (options.strikethrough) {
-    text = globals.converter._dispatch('strikethrough.before', text, options, globals);
-    text = text.replace(/(?:~){2}([\s\S]+?)(?:~){2}/g, '<del>$1</del>');
-    text = globals.converter._dispatch('strikethrough.after', text, options, globals);
-  }
-
-  return text;
-});
-
-/**
- * Strips link definitions from text, stores the URLs and titles in
- * hash references.
- * Link defs are in the form: ^[id]: url "optional title"
- */
-showdown.subParser('stripLinkDefinitions', function (text, options, globals) {
-  'use strict';
-
-  var regex = /^ {0,3}\[(.+)]:[ \t]*\n?[ \t]*<?(\S+?)>?(?: =([*\d]+[A-Za-z%]{0,4})x([*\d]+[A-Za-z%]{0,4}))?[ \t]*\n?[ \t]*(?:(\n*)["|'(](.+?)["|')][ \t]*)?(?:\n+|(?=¨0))/gm;
-
-  // attacklab: sentinel workarounds for lack of \A and \Z, safari\khtml bug
-  text += '¨0';
-
-  text = text.replace(regex, function (wholeMatch, linkId, url, width, height, blankLines, title) {
-    linkId = linkId.toLowerCase();
-    globals.gUrls[linkId] = showdown.subParser('encodeAmpsAndAngles')(url, options, globals);  // Link IDs are case-insensitive
-
-    if (blankLines) {
-      // Oops, found blank lines, so it's not a title.
-      // Put back the parenthetical statement we stole.
-      return blankLines + title;
-
-    } else {
-      if (title) {
-        globals.gTitles[linkId] = title.replace(/"|'/g, '&quot;');
-      }
-      if (options.parseImgDimensions && width && height) {
-        globals.gDimensions[linkId] = {
-          width:  width,
-          height: height
-        };
-      }
-    }
-    // Completely remove the definition from the text
-    return '';
-  });
-
-  // attacklab: strip sentinel
-  text = text.replace(/¨0/, '');
-
-  return text;
-});
-
-showdown.subParser('tables', function (text, options, globals) {
-  'use strict';
-
-  if (!options.tables) {
-    return text;
-  }
-
-  var tableRgx = /^ {0,3}\|?.+\|.+\n[ \t]{0,3}\|?[ \t]*:?[ \t]*(?:-|=){2,}[ \t]*:?[ \t]*\|[ \t]*:?[ \t]*(?:-|=){2,}[\s\S]+?(?:\n\n|¨0)/gm;
-
-  function parseStyles (sLine) {
-    if (/^:[ \t]*--*$/.test(sLine)) {
-      return ' style="text-align:left;"';
-    } else if (/^--*[ \t]*:[ \t]*$/.test(sLine)) {
-      return ' style="text-align:right;"';
-    } else if (/^:[ \t]*--*[ \t]*:$/.test(sLine)) {
-      return ' style="text-align:center;"';
-    } else {
-      return '';
-    }
-  }
-
-  function parseHeaders (header, style) {
-    var id = '';
-    header = header.trim();
-    if (options.tableHeaderId) {
-      id = ' id="' + header.replace(/ /g, '_').toLowerCase() + '"';
-    }
-    header = showdown.subParser('spanGamut')(header, options, globals);
-
-    return '<th' + id + style + '>' + header + '</th>\n';
-  }
-
-  function parseCells (cell, style) {
-    var subText = showdown.subParser('spanGamut')(cell, options, globals);
-    return '<td' + style + '>' + subText + '</td>\n';
-  }
-
-  function buildTable (headers, cells) {
-    var tb = '<table>\n<thead>\n<tr>\n',
-        tblLgn = headers.length;
-
-    for (var i = 0; i < tblLgn; ++i) {
-      tb += headers[i];
-    }
-    tb += '</tr>\n</thead>\n<tbody>\n';
-
-    for (i = 0; i < cells.length; ++i) {
-      tb += '<tr>\n';
-      for (var ii = 0; ii < tblLgn; ++ii) {
-        tb += cells[i][ii];
-      }
-      tb += '</tr>\n';
-    }
-    tb += '</tbody>\n</table>\n';
-    return tb;
-  }
-
-  text = globals.converter._dispatch('tables.before', text, options, globals);
-
-  text = text.replace(tableRgx, function (rawTable) {
-
-    var i, tableLines = rawTable.split('\n');
-
-    // strip wrong first and last column if wrapped tables are used
-    for (i = 0; i < tableLines.length; ++i) {
-      if (/^ {0,3}\|/.test(tableLines[i])) {
-        tableLines[i] = tableLines[i].replace(/^ {0,3}\|/, '');
-      }
-      if (/\|[ \t]*$/.test(tableLines[i])) {
-        tableLines[i] = tableLines[i].replace(/\|[ \t]*$/, '');
-      }
-    }
-
-    var rawHeaders = tableLines[0].split('|').map(function (s) { return s.trim();}),
-        rawStyles = tableLines[1].split('|').map(function (s) { return s.trim();}),
-        rawCells = [],
-        headers = [],
-        styles = [],
-        cells = [];
-
-    tableLines.shift();
-    tableLines.shift();
-
-    for (i = 0; i < tableLines.length; ++i) {
-      if (tableLines[i].trim() === '') {
-        continue;
-      }
-      rawCells.push(
-        tableLines[i]
-          .split('|')
-          .map(function (s) {
-            return s.trim();
-          })
-      );
-    }
-
-    if (rawHeaders.length < rawStyles.length) {
-      return rawTable;
-    }
-
-    for (i = 0; i < rawStyles.length; ++i) {
-      styles.push(parseStyles(rawStyles[i]));
-    }
-
-    for (i = 0; i < rawHeaders.length; ++i) {
-      if (showdown.helper.isUndefined(styles[i])) {
-        styles[i] = '';
-      }
-      headers.push(parseHeaders(rawHeaders[i], styles[i]));
-    }
-
-    for (i = 0; i < rawCells.length; ++i) {
-      var row = [];
-      for (var ii = 0; ii < headers.length; ++ii) {
-        if (showdown.helper.isUndefined(rawCells[i][ii])) {
-
-        }
-        row.push(parseCells(rawCells[i][ii], styles[ii]));
-      }
-      cells.push(row);
-    }
-
-    return buildTable(headers, cells);
-  });
-
-  text = globals.converter._dispatch('tables.after', text, options, globals);
-
-  return text;
-});
-
-/**
- * Swap back in all the special characters we've hidden.
- */
-showdown.subParser('unescapeSpecialChars', function (text, options, globals) {
-  'use strict';
-  text = globals.converter._dispatch('unescapeSpecialChars.before', text, options, globals);
-
-  text = text.replace(/¨E(\d+)E/g, function (wholeMatch, m1) {
-    var charCodeToReplace = parseInt(m1);
-    return String.fromCharCode(charCodeToReplace);
-  });
-
-  text = globals.converter._dispatch('unescapeSpecialChars.after', text, options, globals);
-  return text;
-});
-
-var root = this;
-
-// CommonJS/nodeJS Loader
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = showdown;
-
-// AMD Loader
-} else if (true) {
-  !(__WEBPACK_AMD_DEFINE_RESULT__ = function () {
-    'use strict';
-    return showdown;
-  }.call(exports, __webpack_require__, exports, module),
-				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
-
-// Regular Browser loader
-} else {
-  root.showdown = showdown;
-}
-}).call(this);
-
-//# sourceMappingURL=showdown.js.map
-
-
-/***/ }),
-/* 2 */
+/* 6 */
 /***/ (function(module, exports, __webpack_require__) {
 
 "use strict";
 
 
-var _showdown = __webpack_require__(1);
+// commonmark.js - CommomMark in JavaScript
+// Copyright (C) 2014 John MacFarlane
+// License: BSD3.
 
-var _traverse = __webpack_require__(0);
+// Basic usage:
+//
+// var commonmark = require('commonmark');
+// var parser = new commonmark.Parser();
+// var renderer = new commonmark.HtmlRenderer();
+// console.log(renderer.render(parser.parse('Hello *world*')));
 
-var _traverse2 = _interopRequireDefault(_traverse);
+module.exports.version = '0.27.0';
+module.exports.Node = __webpack_require__(1);
+module.exports.Parser = __webpack_require__(7);
+// module.exports.HtmlRenderer = require('./html');
+module.exports.HtmlRenderer = __webpack_require__(11);
+module.exports.XmlRenderer = __webpack_require__(13);
 
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-/* global NodeFilter, XMLHttpRequest */
-module.exports = function readout() {
-  var readoutNS = 'data-readout-src';
-  var root = document.documentElement;
-  var treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
-    acceptNode: function acceptNode(node) {
-      return node.hasAttribute(readoutNS) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-    }
-  });
-  var converter = new _showdown.Converter();
-  converter.setFlavor('github');
-  var currentPath = [];
-  var anchor = document.createElement('a');
-  var traverseOpts = {
-    each: function each(node) {
-      currentPath.push(node.getAttribute(readoutNS));
-    },
-    leaf: function leaf(node) {
-      anchor.href = currentPath.reduce(function (result, el) {
-        return result + '/' + el;
-      });
-      get(anchor.href, function (data) {
-        var html = converter.makeHtml(data);
-        node.innerHTML = html;
-      });
-    },
-    sibling: function sibling() {
-      currentPath.pop();
-    }
-  };
-  (0, _traverse2.default)(treeWalker, traverseOpts);
+/***/ }),
+/* 7 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var Node = __webpack_require__(1);
+var unescapeString = __webpack_require__(0).unescapeString;
+var OPENTAG = __webpack_require__(0).OPENTAG;
+var CLOSETAG = __webpack_require__(0).CLOSETAG;
+
+var CODE_INDENT = 4;
+
+var C_TAB = 9;
+var C_NEWLINE = 10;
+var C_GREATERTHAN = 62;
+var C_LESSTHAN = 60;
+var C_SPACE = 32;
+var C_OPEN_BRACKET = 91;
+
+var InlineParser = __webpack_require__(9);
+
+var reHtmlBlockOpen = [
+   /./, // dummy for 0
+   /^<(?:script|pre|style)(?:\s|>|$)/i,
+   /^<!--/,
+   /^<[?]/,
+   /^<![A-Z]/,
+   /^<!\[CDATA\[/,
+   /^<[/]?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[123456]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|section|source|title|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|[/]?[>]|$)/i,
+    new RegExp('^(?:' + OPENTAG + '|' + CLOSETAG + ')\\s*$', 'i')
+];
+
+var reHtmlBlockClose = [
+   /./, // dummy for 0
+   /<\/(?:script|pre|style)>/i,
+   /-->/,
+   /\?>/,
+   />/,
+   /\]\]>/
+];
+
+var reThematicBreak = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})[ \t]*$/;
+
+var reMaybeSpecial = /^[#`~*+_=<>0-9-]/;
+
+var reNonSpace = /[^ \t\f\v\r\n]/;
+
+var reBulletListMarker = /^[*+-]/;
+
+var reOrderedListMarker = /^(\d{1,9})([.)])/;
+
+var reATXHeadingMarker = /^#{1,6}(?:[ \t]+|$)/;
+
+var reCodeFence = /^`{3,}(?!.*`)|^~{3,}(?!.*~)/;
+
+var reClosingCodeFence = /^(?:`{3,}|~{3,})(?= *$)/;
+
+var reSetextHeadingLine = /^(?:=+|-+)[ \t]*$/;
+
+var reLineEnding = /\r\n|\n|\r/;
+
+// Returns true if string contains only space characters.
+var isBlank = function(s) {
+    return !(reNonSpace.test(s));
 };
 
+var isSpaceOrTab = function(c) {
+    return c === C_SPACE || c === C_TAB;
+};
+
+var peek = function(ln, pos) {
+    if (pos < ln.length) {
+        return ln.charCodeAt(pos);
+    } else {
+        return -1;
+    }
+};
+
+// DOC PARSER
+
+// These are methods of a Parser object, defined below.
+
+// Returns true if block ends with a blank line, descending if needed
+// into lists and sublists.
+var endsWithBlankLine = function(block) {
+    while (block) {
+        if (block._lastLineBlank) {
+            return true;
+        }
+        var t = block.type;
+        if (t === 'list' || t === 'item') {
+            block = block._lastChild;
+        } else {
+            break;
+        }
+    }
+    return false;
+};
+
+// Add a line to the block at the tip.  We assume the tip
+// can accept lines -- that check should be done before calling this.
+var addLine = function() {
+    if (this.partiallyConsumedTab) {
+      this.offset += 1; // skip over tab
+      // add space characters:
+      var charsToTab = 4 - (this.column % 4);
+      this.tip._string_content += (' '.repeat(charsToTab));
+    }
+    this.tip._string_content += this.currentLine.slice(this.offset) + '\n';
+};
+
+// Add block of type tag as a child of the tip.  If the tip can't
+// accept children, close and finalize it and try its parent,
+// and so on til we find a block that can accept children.
+var addChild = function(tag, offset) {
+    while (!this.blocks[this.tip.type].canContain(tag)) {
+        this.finalize(this.tip, this.lineNumber - 1);
+    }
+
+    var column_number = offset + 1; // offset 0 = column 1
+    var newBlock = new Node(tag, [[this.lineNumber, column_number], [0, 0]]);
+    newBlock._string_content = '';
+    this.tip.appendChild(newBlock);
+    this.tip = newBlock;
+    return newBlock;
+};
+
+// Parse a list marker and return data on the marker (type,
+// start, delimiter, bullet character, padding) or null.
+var parseListMarker = function(parser, container) {
+    var rest = parser.currentLine.slice(parser.nextNonspace);
+    var match;
+    var nextc;
+    var spacesStartCol;
+    var spacesStartOffset;
+    var data = { type: null,
+                 tight: true,  // lists are tight by default
+                 bulletChar: null,
+                 start: null,
+                 delimiter: null,
+                 padding: null,
+                 markerOffset: parser.indent };
+    if ((match = rest.match(reBulletListMarker))) {
+        data.type = 'bullet';
+        data.bulletChar = match[0][0];
+
+    } else if ((match = rest.match(reOrderedListMarker)) &&
+                (container.type !== 'paragraph' ||
+                 match[1] === '1')) {
+        data.type = 'ordered';
+        data.start = parseInt(match[1]);
+        data.delimiter = match[2];
+    } else {
+        return null;
+    }
+    // make sure we have spaces after
+    nextc = peek(parser.currentLine, parser.nextNonspace + match[0].length);
+    if (!(nextc === -1 || nextc === C_TAB || nextc === C_SPACE)) {
+        return null;
+    }
+
+    // if it interrupts paragraph, make sure first line isn't blank
+    if (container.type === 'paragraph' && !parser.currentLine.slice(parser.nextNonspace + match[0].length).match(reNonSpace)) {
+        return null;
+    }
+
+    // we've got a match! advance offset and calculate padding
+    parser.advanceNextNonspace(); // to start of marker
+    parser.advanceOffset(match[0].length, true); // to end of marker
+    spacesStartCol = parser.column;
+    spacesStartOffset = parser.offset;
+    do {
+        parser.advanceOffset(1, true);
+        nextc = peek(parser.currentLine, parser.offset);
+    } while (parser.column - spacesStartCol < 5 &&
+           isSpaceOrTab(nextc));
+    var blank_item = peek(parser.currentLine, parser.offset) === -1;
+    var spaces_after_marker = parser.column - spacesStartCol;
+    if (spaces_after_marker >= 5 ||
+        spaces_after_marker < 1 ||
+        blank_item) {
+        data.padding = match[0].length + 1;
+        parser.column = spacesStartCol;
+        parser.offset = spacesStartOffset;
+        if (isSpaceOrTab(peek(parser.currentLine, parser.offset))) {
+            parser.advanceOffset(1, true);
+        }
+    } else {
+        data.padding = match[0].length + spaces_after_marker;
+    }
+    return data;
+};
+
+// Returns true if the two list items are of the same type,
+// with the same delimiter and bullet character.  This is used
+// in agglomerating list items into lists.
+var listsMatch = function(list_data, item_data) {
+    return (list_data.type === item_data.type &&
+            list_data.delimiter === item_data.delimiter &&
+            list_data.bulletChar === item_data.bulletChar);
+};
+
+// Finalize and close any unmatched blocks.
+var closeUnmatchedBlocks = function() {
+    if (!this.allClosed) {
+        // finalize any blocks not matched
+        while (this.oldtip !== this.lastMatchedContainer) {
+            var parent = this.oldtip._parent;
+            this.finalize(this.oldtip, this.lineNumber - 1);
+            this.oldtip = parent;
+        }
+        this.allClosed = true;
+    }
+};
+
+// 'finalize' is run when the block is closed.
+// 'continue' is run to check whether the block is continuing
+// at a certain line and offset (e.g. whether a block quote
+// contains a `>`.  It returns 0 for matched, 1 for not matched,
+// and 2 for "we've dealt with this line completely, go to next."
+var blocks = {
+    document: {
+        continue: function() { return 0; },
+        finalize: function() { return; },
+        canContain: function(t) { return (t !== 'item'); },
+        acceptsLines: false
+    },
+    list: {
+        continue: function() { return 0; },
+        finalize: function(parser, block) {
+            var item = block._firstChild;
+            while (item) {
+                // check for non-final list item ending with blank line:
+                if (endsWithBlankLine(item) && item._next) {
+                    block._listData.tight = false;
+                    break;
+                }
+                // recurse into children of list item, to see if there are
+                // spaces between any of them:
+                var subitem = item._firstChild;
+                while (subitem) {
+                    if (endsWithBlankLine(subitem) &&
+                        (item._next || subitem._next)) {
+                        block._listData.tight = false;
+                        break;
+                    }
+                    subitem = subitem._next;
+                }
+                item = item._next;
+            }
+        },
+        canContain: function(t) { return (t === 'item'); },
+        acceptsLines: false
+    },
+    block_quote: {
+        continue: function(parser) {
+            var ln = parser.currentLine;
+            if (!parser.indented &&
+                peek(ln, parser.nextNonspace) === C_GREATERTHAN) {
+                parser.advanceNextNonspace();
+                parser.advanceOffset(1, false);
+                if (isSpaceOrTab(peek(ln, parser.offset))) {
+                    parser.advanceOffset(1, true);
+                }
+            } else {
+                return 1;
+            }
+            return 0;
+        },
+        finalize: function() { return; },
+        canContain: function(t) { return (t !== 'item'); },
+        acceptsLines: false
+    },
+    item: {
+        continue: function(parser, container) {
+            if (parser.blank) {
+                if (container._firstChild == null) {
+                    // Blank line after empty list item
+                    return 1;
+                } else {
+                    parser.advanceNextNonspace();
+                }
+            } else if (parser.indent >=
+                       container._listData.markerOffset +
+                       container._listData.padding) {
+                parser.advanceOffset(container._listData.markerOffset +
+                    container._listData.padding, true);
+            } else {
+                return 1;
+            }
+            return 0;
+        },
+        finalize: function() { return; },
+        canContain: function(t) { return (t !== 'item'); },
+        acceptsLines: false
+    },
+    heading: {
+        continue: function() {
+            // a heading can never container > 1 line, so fail to match:
+            return 1;
+        },
+        finalize: function() { return; },
+        canContain: function() { return false; },
+        acceptsLines: false
+    },
+    thematic_break: {
+        continue: function() {
+            // a thematic break can never container > 1 line, so fail to match:
+            return 1;
+        },
+        finalize: function() { return; },
+        canContain: function() { return false; },
+        acceptsLines: false
+    },
+    code_block: {
+        continue: function(parser, container) {
+            var ln = parser.currentLine;
+            var indent = parser.indent;
+            if (container._isFenced) { // fenced
+                var match = (indent <= 3 &&
+                    ln.charAt(parser.nextNonspace) === container._fenceChar &&
+                    ln.slice(parser.nextNonspace).match(reClosingCodeFence));
+                if (match && match[0].length >= container._fenceLength) {
+                    // closing fence - we're at end of line, so we can return
+                    parser.finalize(container, parser.lineNumber);
+                    return 2;
+                } else {
+                    // skip optional spaces of fence offset
+                    var i = container._fenceOffset;
+                    while (i > 0 && isSpaceOrTab(peek(ln, parser.offset))) {
+                        parser.advanceOffset(1, true);
+                        i--;
+                    }
+                }
+            } else { // indented
+                if (indent >= CODE_INDENT) {
+                    parser.advanceOffset(CODE_INDENT, true);
+                } else if (parser.blank) {
+                    parser.advanceNextNonspace();
+                } else {
+                    return 1;
+                }
+            }
+            return 0;
+        },
+        finalize: function(parser, block) {
+            if (block._isFenced) { // fenced
+                // first line becomes info string
+                var content = block._string_content;
+                var newlinePos = content.indexOf('\n');
+                var firstLine = content.slice(0, newlinePos);
+                var rest = content.slice(newlinePos + 1);
+                block.info = unescapeString(firstLine.trim());
+                block._literal = rest;
+            } else { // indented
+                block._literal = block._string_content.replace(/(\n *)+$/, '\n');
+            }
+            block._string_content = null; // allow GC
+        },
+        canContain: function() { return false; },
+        acceptsLines: true
+    },
+    html_block: {
+        continue: function(parser, container) {
+            return ((parser.blank &&
+                     (container._htmlBlockType === 6 ||
+                      container._htmlBlockType === 7)) ? 1 : 0);
+        },
+        finalize: function(parser, block) {
+            block._literal = block._string_content.replace(/(\n *)+$/, '');
+            block._string_content = null; // allow GC
+        },
+        canContain: function() { return false; },
+        acceptsLines: true
+    },
+    paragraph: {
+        continue: function(parser) {
+            return (parser.blank ? 1 : 0);
+        },
+        finalize: function(parser, block) {
+            var pos;
+            var hasReferenceDefs = false;
+
+            // try parsing the beginning as link reference definitions:
+            while (peek(block._string_content, 0) === C_OPEN_BRACKET &&
+                   (pos =
+                    parser.inlineParser.parseReference(block._string_content,
+                                                       parser.refmap))) {
+                block._string_content = block._string_content.slice(pos);
+                hasReferenceDefs = true;
+            }
+            if (hasReferenceDefs && isBlank(block._string_content)) {
+                block.unlink();
+            }
+        },
+        canContain: function() { return false; },
+        acceptsLines: true
+    }
+};
+
+// block start functions.  Return values:
+// 0 = no match
+// 1 = matched container, keep going
+// 2 = matched leaf, no more block starts
+var blockStarts = [
+    // block quote
+    function(parser) {
+        if (!parser.indented &&
+            peek(parser.currentLine, parser.nextNonspace) === C_GREATERTHAN) {
+            parser.advanceNextNonspace();
+            parser.advanceOffset(1, false);
+            // optional following space
+            if (isSpaceOrTab(peek(parser.currentLine, parser.offset))) {
+                parser.advanceOffset(1, true);
+            }
+            parser.closeUnmatchedBlocks();
+            parser.addChild('block_quote', parser.nextNonspace);
+            return 1;
+        } else {
+            return 0;
+        }
+    },
+
+    // ATX heading
+    function(parser) {
+        var match;
+        if (!parser.indented &&
+            (match = parser.currentLine.slice(parser.nextNonspace).match(reATXHeadingMarker))) {
+            parser.advanceNextNonspace();
+            parser.advanceOffset(match[0].length, false);
+            parser.closeUnmatchedBlocks();
+            var container = parser.addChild('heading', parser.nextNonspace);
+            container.level = match[0].trim().length; // number of #s
+            // remove trailing ###s:
+            container._string_content =
+                parser.currentLine.slice(parser.offset).replace(/^ *#+ *$/, '').replace(/ +#+ *$/, '');
+            parser.advanceOffset(parser.currentLine.length - parser.offset);
+            return 2;
+        } else {
+            return 0;
+        }
+    },
+
+    // Fenced code block
+    function(parser) {
+        var match;
+        if (!parser.indented &&
+            (match = parser.currentLine.slice(parser.nextNonspace).match(reCodeFence))) {
+            var fenceLength = match[0].length;
+            parser.closeUnmatchedBlocks();
+            var container = parser.addChild('code_block', parser.nextNonspace);
+            container._isFenced = true;
+            container._fenceLength = fenceLength;
+            container._fenceChar = match[0][0];
+            container._fenceOffset = parser.indent;
+            parser.advanceNextNonspace();
+            parser.advanceOffset(fenceLength, false);
+            return 2;
+        } else {
+            return 0;
+        }
+    },
+
+    // HTML block
+    function(parser, container) {
+        if (!parser.indented &&
+            peek(parser.currentLine, parser.nextNonspace) === C_LESSTHAN) {
+            var s = parser.currentLine.slice(parser.nextNonspace);
+            var blockType;
+
+            for (blockType = 1; blockType <= 7; blockType++) {
+                if (reHtmlBlockOpen[blockType].test(s) &&
+                    (blockType < 7 ||
+                     container.type !== 'paragraph')) {
+                    parser.closeUnmatchedBlocks();
+                    // We don't adjust parser.offset;
+                    // spaces are part of the HTML block:
+                    var b = parser.addChild('html_block',
+                                            parser.offset);
+                    b._htmlBlockType = blockType;
+                    return 2;
+                }
+            }
+        }
+
+        return 0;
+
+    },
+
+    // Setext heading
+    function(parser, container) {
+        var match;
+        if (!parser.indented &&
+            container.type === 'paragraph' &&
+                   ((match = parser.currentLine.slice(parser.nextNonspace).match(reSetextHeadingLine)))) {
+            parser.closeUnmatchedBlocks();
+            var heading = new Node('heading', container.sourcepos);
+            heading.level = match[0][0] === '=' ? 1 : 2;
+            heading._string_content = container._string_content;
+            container.insertAfter(heading);
+            container.unlink();
+            parser.tip = heading;
+            parser.advanceOffset(parser.currentLine.length - parser.offset, false);
+            return 2;
+        } else {
+            return 0;
+        }
+    },
+
+    // thematic break
+    function(parser) {
+        if (!parser.indented &&
+            reThematicBreak.test(parser.currentLine.slice(parser.nextNonspace))) {
+            parser.closeUnmatchedBlocks();
+            parser.addChild('thematic_break', parser.nextNonspace);
+            parser.advanceOffset(parser.currentLine.length - parser.offset, false);
+            return 2;
+        } else {
+            return 0;
+        }
+    },
+
+    // list item
+    function(parser, container) {
+        var data;
+
+        if ((!parser.indented || container.type === 'list')
+                && (data = parseListMarker(parser, container))) {
+            parser.closeUnmatchedBlocks();
+
+            // add the list if needed
+            if (parser.tip.type !== 'list' ||
+                !(listsMatch(container._listData, data))) {
+                container = parser.addChild('list', parser.nextNonspace);
+                container._listData = data;
+            }
+
+            // add the list item
+            container = parser.addChild('item', parser.nextNonspace);
+            container._listData = data;
+            return 1;
+        } else {
+            return 0;
+        }
+    },
+
+    // indented code block
+    function(parser) {
+        if (parser.indented &&
+            parser.tip.type !== 'paragraph' &&
+            !parser.blank) {
+            // indented code
+            parser.advanceOffset(CODE_INDENT, true);
+            parser.closeUnmatchedBlocks();
+            parser.addChild('code_block', parser.offset);
+            return 2;
+        } else {
+            return 0;
+        }
+     }
+
+];
+
+var advanceOffset = function(count, columns) {
+    var currentLine = this.currentLine;
+    var charsToTab, charsToAdvance;
+    var c;
+    while (count > 0 && (c = currentLine[this.offset])) {
+        if (c === '\t') {
+            charsToTab = 4 - (this.column % 4);
+            if (columns) {
+                this.partiallyConsumedTab = charsToTab > count;
+                charsToAdvance = charsToTab > count ? count : charsToTab;
+                this.column += charsToAdvance;
+                this.offset += this.partiallyConsumedTab ? 0 : 1;
+                count -= charsToAdvance;
+            } else {
+                this.partiallyConsumedTab = false;
+                this.column += charsToTab;
+                this.offset += 1;
+                count -= 1;
+            }
+        } else {
+            this.partiallyConsumedTab = false;
+            this.offset += 1;
+            this.column += 1; // assume ascii; block starts are ascii
+            count -= 1;
+        }
+    }
+};
+
+var advanceNextNonspace = function() {
+    this.offset = this.nextNonspace;
+    this.column = this.nextNonspaceColumn;
+    this.partiallyConsumedTab = false;
+};
+
+var findNextNonspace = function() {
+    var currentLine = this.currentLine;
+    var i = this.offset;
+    var cols = this.column;
+    var c;
+
+    while ((c = currentLine.charAt(i)) !== '') {
+        if (c === ' ') {
+            i++;
+            cols++;
+        } else if (c === '\t') {
+            i++;
+            cols += (4 - (cols % 4));
+        } else {
+            break;
+        }
+    }
+    this.blank = (c === '\n' || c === '\r' || c === '');
+    this.nextNonspace = i;
+    this.nextNonspaceColumn = cols;
+    this.indent = this.nextNonspaceColumn - this.column;
+    this.indented = this.indent >= CODE_INDENT;
+};
+
+// Analyze a line of text and update the document appropriately.
+// We parse markdown text by calling this on each line of input,
+// then finalizing the document.
+var incorporateLine = function(ln) {
+    var all_matched = true;
+    var t;
+
+    var container = this.doc;
+    this.oldtip = this.tip;
+    this.offset = 0;
+    this.column = 0;
+    this.blank = false;
+    this.partiallyConsumedTab = false;
+    this.lineNumber += 1;
+
+    // replace NUL characters for security
+    if (ln.indexOf('\u0000') !== -1) {
+        ln = ln.replace(/\0/g, '\uFFFD');
+    }
+
+    this.currentLine = ln;
+
+    // For each containing block, try to parse the associated line start.
+    // Bail out on failure: container will point to the last matching block.
+    // Set all_matched to false if not all containers match.
+    var lastChild;
+    while ((lastChild = container._lastChild) && lastChild._open) {
+        container = lastChild;
+
+        this.findNextNonspace();
+
+        switch (this.blocks[container.type].continue(this, container)) {
+        case 0: // we've matched, keep going
+            break;
+        case 1: // we've failed to match a block
+            all_matched = false;
+            break;
+        case 2: // we've hit end of line for fenced code close and can return
+            this.lastLineLength = ln.length;
+            return;
+        default:
+            throw 'continue returned illegal value, must be 0, 1, or 2';
+        }
+        if (!all_matched) {
+            container = container._parent; // back up to last matching block
+            break;
+        }
+    }
+
+    this.allClosed = (container === this.oldtip);
+    this.lastMatchedContainer = container;
+
+    var matchedLeaf = container.type !== 'paragraph' &&
+            blocks[container.type].acceptsLines;
+    var starts = this.blockStarts;
+    var startsLen = starts.length;
+    // Unless last matched container is a code block, try new container starts,
+    // adding children to the last matched container:
+    while (!matchedLeaf) {
+
+        this.findNextNonspace();
+
+        // this is a little performance optimization:
+        if (!this.indented &&
+            !reMaybeSpecial.test(ln.slice(this.nextNonspace))) {
+            this.advanceNextNonspace();
+            break;
+        }
+
+        var i = 0;
+        while (i < startsLen) {
+            var res = starts[i](this, container);
+            if (res === 1) {
+                container = this.tip;
+                break;
+            } else if (res === 2) {
+                container = this.tip;
+                matchedLeaf = true;
+                break;
+            } else {
+                i++;
+            }
+        }
+
+        if (i === startsLen) { // nothing matched
+            this.advanceNextNonspace();
+            break;
+        }
+    }
+
+    // What remains at the offset is a text line.  Add the text to the
+    // appropriate container.
+
+   // First check for a lazy paragraph continuation:
+    if (!this.allClosed && !this.blank &&
+        this.tip.type === 'paragraph') {
+        // lazy paragraph continuation
+        this.addLine();
+
+    } else { // not a lazy continuation
+
+        // finalize any blocks not matched
+        this.closeUnmatchedBlocks();
+        if (this.blank && container.lastChild) {
+            container.lastChild._lastLineBlank = true;
+        }
+
+        t = container.type;
+
+        // Block quote lines are never blank as they start with >
+        // and we don't count blanks in fenced code for purposes of tight/loose
+        // lists or breaking out of lists.  We also don't set _lastLineBlank
+        // on an empty list item, or if we just closed a fenced block.
+        var lastLineBlank = this.blank &&
+            !(t === 'block_quote' ||
+              (t === 'code_block' && container._isFenced) ||
+              (t === 'item' &&
+               !container._firstChild &&
+               container.sourcepos[0][0] === this.lineNumber));
+
+        // propagate lastLineBlank up through parents:
+        var cont = container;
+        while (cont) {
+            cont._lastLineBlank = lastLineBlank;
+            cont = cont._parent;
+        }
+
+        if (this.blocks[t].acceptsLines) {
+            this.addLine();
+            // if HtmlBlock, check for end condition
+            if (t === 'html_block' &&
+                container._htmlBlockType >= 1 &&
+                container._htmlBlockType <= 5 &&
+                reHtmlBlockClose[container._htmlBlockType].test(this.currentLine.slice(this.offset))) {
+                this.finalize(container, this.lineNumber);
+            }
+
+        } else if (this.offset < ln.length && !this.blank) {
+            // create paragraph container for line
+            container = this.addChild('paragraph', this.offset);
+            this.advanceNextNonspace();
+            this.addLine();
+        }
+    }
+    this.lastLineLength = ln.length;
+};
+
+// Finalize a block.  Close it and do any necessary postprocessing,
+// e.g. creating string_content from strings, setting the 'tight'
+// or 'loose' status of a list, and parsing the beginnings
+// of paragraphs for reference definitions.  Reset the tip to the
+// parent of the closed block.
+var finalize = function(block, lineNumber) {
+    var above = block._parent;
+    block._open = false;
+    block.sourcepos[1] = [lineNumber, this.lastLineLength];
+
+    this.blocks[block.type].finalize(this, block);
+
+    this.tip = above;
+};
+
+// Walk through a block & children recursively, parsing string content
+// into inline content where appropriate.
+var processInlines = function(block) {
+    var node, event, t;
+    var walker = block.walker();
+    this.inlineParser.refmap = this.refmap;
+    this.inlineParser.options = this.options;
+    while ((event = walker.next())) {
+        node = event.node;
+        t = node.type;
+        if (!event.entering && (t === 'paragraph' || t === 'heading')) {
+            this.inlineParser.parse(node);
+        }
+    }
+};
+
+var Document = function() {
+    var doc = new Node('document', [[1, 1], [0, 0]]);
+    return doc;
+};
+
+// The main parsing function.  Returns a parsed document AST.
+var parse = function(input) {
+    this.doc = new Document();
+    this.tip = this.doc;
+    this.refmap = {};
+    this.lineNumber = 0;
+    this.lastLineLength = 0;
+    this.offset = 0;
+    this.column = 0;
+    this.lastMatchedContainer = this.doc;
+    this.currentLine = "";
+    if (this.options.time) { console.time("preparing input"); }
+    var lines = input.split(reLineEnding);
+    var len = lines.length;
+    if (input.charCodeAt(input.length - 1) === C_NEWLINE) {
+        // ignore last blank line created by final newline
+        len -= 1;
+    }
+    if (this.options.time) { console.timeEnd("preparing input"); }
+    if (this.options.time) { console.time("block parsing"); }
+    for (var i = 0; i < len; i++) {
+        this.incorporateLine(lines[i]);
+    }
+    while (this.tip) {
+        this.finalize(this.tip, len);
+    }
+    if (this.options.time) { console.timeEnd("block parsing"); }
+    if (this.options.time) { console.time("inline parsing"); }
+    this.processInlines(this.doc);
+    if (this.options.time) { console.timeEnd("inline parsing"); }
+    return this.doc;
+};
+
+
+// The Parser object.
+function Parser(options){
+    return {
+        doc: new Document(),
+        blocks: blocks,
+        blockStarts: blockStarts,
+        tip: this.doc,
+        oldtip: this.doc,
+        currentLine: "",
+        lineNumber: 0,
+        offset: 0,
+        column: 0,
+        nextNonspace: 0,
+        nextNonspaceColumn: 0,
+        indent: 0,
+        indented: false,
+        blank: false,
+        partiallyConsumedTab: false,
+        allClosed: true,
+        lastMatchedContainer: this.doc,
+        refmap: {},
+        lastLineLength: 0,
+        inlineParser: new InlineParser(options),
+        findNextNonspace: findNextNonspace,
+        advanceOffset: advanceOffset,
+        advanceNextNonspace: advanceNextNonspace,
+        addLine: addLine,
+        addChild: addChild,
+        incorporateLine: incorporateLine,
+        finalize: finalize,
+        processInlines: processInlines,
+        closeUnmatchedBlocks: closeUnmatchedBlocks,
+        parse: parse,
+        options: options || {}
+    };
+}
+
+module.exports = Parser;
+
+
+/***/ }),
+/* 8 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+// derived from https://github.com/mathiasbynens/String.fromCodePoint
+/*! http://mths.be/fromcodepoint v0.2.1 by @mathias */
+if (String.fromCodePoint) {
+    module.exports = function (_) {
+        try {
+            return String.fromCodePoint(_);
+        } catch (e) {
+            if (e instanceof RangeError) {
+                return String.fromCharCode(0xFFFD);
+            }
+            throw e;
+        }
+    };
+
+} else {
+
+  var stringFromCharCode = String.fromCharCode;
+  var floor = Math.floor;
+  var fromCodePoint = function() {
+      var MAX_SIZE = 0x4000;
+      var codeUnits = [];
+      var highSurrogate;
+      var lowSurrogate;
+      var index = -1;
+      var length = arguments.length;
+      if (!length) {
+          return '';
+      }
+      var result = '';
+      while (++index < length) {
+          var codePoint = Number(arguments[index]);
+          if (
+              !isFinite(codePoint) || // `NaN`, `+Infinity`, or `-Infinity`
+                  codePoint < 0 || // not a valid Unicode code point
+                  codePoint > 0x10FFFF || // not a valid Unicode code point
+                  floor(codePoint) !== codePoint // not an integer
+          ) {
+              return String.fromCharCode(0xFFFD);
+          }
+          if (codePoint <= 0xFFFF) { // BMP code point
+              codeUnits.push(codePoint);
+          } else { // Astral code point; split in surrogate halves
+              // http://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
+              codePoint -= 0x10000;
+              highSurrogate = (codePoint >> 10) + 0xD800;
+              lowSurrogate = (codePoint % 0x400) + 0xDC00;
+              codeUnits.push(highSurrogate, lowSurrogate);
+          }
+          if (index + 1 === length || codeUnits.length > MAX_SIZE) {
+              result += stringFromCharCode.apply(null, codeUnits);
+              codeUnits.length = 0;
+          }
+      }
+      return result;
+  };
+  module.exports = fromCodePoint;
+}
+
+
+/***/ }),
+/* 9 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var Node = __webpack_require__(1);
+var common = __webpack_require__(0);
+var normalizeReference = __webpack_require__(10);
+
+var normalizeURI = common.normalizeURI;
+var unescapeString = common.unescapeString;
+var fromCodePoint = __webpack_require__(8);
+var decodeHTML = __webpack_require__(2).decodeHTML;
+__webpack_require__(21); // Polyfill for String.prototype.repeat
+
+// Constants for character codes:
+
+var C_NEWLINE = 10;
+var C_ASTERISK = 42;
+var C_UNDERSCORE = 95;
+var C_BACKTICK = 96;
+var C_OPEN_BRACKET = 91;
+var C_CLOSE_BRACKET = 93;
+var C_LESSTHAN = 60;
+var C_BANG = 33;
+var C_BACKSLASH = 92;
+var C_AMPERSAND = 38;
+var C_OPEN_PAREN = 40;
+var C_CLOSE_PAREN = 41;
+var C_COLON = 58;
+var C_SINGLEQUOTE = 39;
+var C_DOUBLEQUOTE = 34;
+
+// Some regexps used in inline parser:
+
+var ESCAPABLE = common.ESCAPABLE;
+var ESCAPED_CHAR = '\\\\' + ESCAPABLE;
+var REG_CHAR = '[^\\\\()\\x00-\\x20]';
+var IN_PARENS_NOSP = '\\((' + REG_CHAR + '|' + ESCAPED_CHAR + '|\\\\)*\\)';
+
+var ENTITY = common.ENTITY;
+var reHtmlTag = common.reHtmlTag;
+
+var rePunctuation = new RegExp(/[!-#%-\*,-/:;\?@\[-\]_\{\}\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061E\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u0AF0\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166D\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E42\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC9\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDF3C-\uDF3E]|\uD809[\uDC70-\uDC74]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]/);
+
+var reLinkTitle = new RegExp(
+    '^(?:"(' + ESCAPED_CHAR + '|[^"\\x00])*"' +
+        '|' +
+        '\'(' + ESCAPED_CHAR + '|[^\'\\x00])*\'' +
+        '|' +
+        '\\((' + ESCAPED_CHAR + '|[^)\\x00])*\\))');
+
+var reLinkDestinationBraces = new RegExp(
+    '^(?:[<](?:[^ <>\\t\\n\\\\\\x00]' + '|' + ESCAPED_CHAR + '|' + '\\\\)*[>])');
+
+var reLinkDestination = new RegExp(
+    '^(?:' + REG_CHAR + '+|' + ESCAPED_CHAR + '|\\\\|' + IN_PARENS_NOSP + ')*');
+
+var reEscapable = new RegExp('^' + ESCAPABLE);
+
+var reEntityHere = new RegExp('^' + ENTITY, 'i');
+
+var reTicks = /`+/;
+
+var reTicksHere = /^`+/;
+
+var reEllipses = /\.\.\./g;
+
+var reDash = /--+/g;
+
+var reEmailAutolink = /^<([a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/;
+
+var reAutolink = /^<[A-Za-z][A-Za-z0-9.+-]{1,31}:[^<>\x00-\x20]*>/i;
+
+var reSpnl = /^ *(?:\n *)?/;
+
+var reWhitespaceChar = /^[ \t\n\x0b\x0c\x0d]/;
+
+var reWhitespace = /[ \t\n\x0b\x0c\x0d]+/g;
+
+var reUnicodeWhitespaceChar = /^\s/;
+
+var reUnicodeWhitespace = /\s+/g;
+
+var reFinalSpace = / *$/;
+
+var reInitialSpace = /^ */;
+
+var reSpaceAtEndOfLine = /^ *(?:\n|$)/;
+
+var reLinkLabel = new RegExp('^\\[(?:[^\\\\\\[\\]]|' + ESCAPED_CHAR +
+  '|\\\\){0,1000}\\]');
+
+// Matches a string of non-special characters.
+var reMain = /^[^\n`\[\]\\!<&*_'"]+/m;
+
+var text = function(s) {
+    var node = new Node('text');
+    node._literal = s;
+    return node;
+};
+
+// INLINE PARSER
+
+// These are methods of an InlineParser object, defined below.
+// An InlineParser keeps track of a subject (a string to be
+// parsed) and a position in that subject.
+
+// If re matches at current position in the subject, advance
+// position in subject and return the match; otherwise return null.
+var match = function(re) {
+    var m = re.exec(this.subject.slice(this.pos));
+    if (m === null) {
+        return null;
+    } else {
+        this.pos += m.index + m[0].length;
+        return m[0];
+    }
+};
+
+// Returns the code for the character at the current subject position, or -1
+// there are no more characters.
+var peek = function() {
+    if (this.pos < this.subject.length) {
+        return this.subject.charCodeAt(this.pos);
+    } else {
+        return -1;
+    }
+};
+
+// Parse zero or more space characters, including at most one newline
+var spnl = function() {
+    this.match(reSpnl);
+    return true;
+};
+
+// All of the parsers below try to match something at the current position
+// in the subject.  If they succeed in matching anything, they
+// return the inline matched, advancing the subject.
+
+// Attempt to parse backticks, adding either a backtick code span or a
+// literal sequence of backticks.
+var parseBackticks = function(block) {
+    var ticks = this.match(reTicksHere);
+    if (ticks === null) {
+        return false;
+    }
+    var afterOpenTicks = this.pos;
+    var matched;
+    var node;
+    while ((matched = this.match(reTicks)) !== null) {
+        if (matched === ticks) {
+            node = new Node('code');
+            node._literal = this.subject.slice(afterOpenTicks,
+                                        this.pos - ticks.length)
+                          .trim().replace(reWhitespace, ' ');
+            block.appendChild(node);
+            return true;
+        }
+    }
+    // If we got here, we didn't match a closing backtick sequence.
+    this.pos = afterOpenTicks;
+    block.appendChild(text(ticks));
+    return true;
+};
+
+// Parse a backslash-escaped special character, adding either the escaped
+// character, a hard line break (if the backslash is followed by a newline),
+// or a literal backslash to the block's children.  Assumes current character
+// is a backslash.
+var parseBackslash = function(block) {
+    var subj = this.subject;
+    var node;
+    this.pos += 1;
+    if (this.peek() === C_NEWLINE) {
+        this.pos += 1;
+        node = new Node('linebreak');
+        block.appendChild(node);
+    } else if (reEscapable.test(subj.charAt(this.pos))) {
+        block.appendChild(text(subj.charAt(this.pos)));
+        this.pos += 1;
+    } else {
+        block.appendChild(text('\\'));
+    }
+    return true;
+};
+
+// Attempt to parse an autolink (URL or email in pointy brackets).
+var parseAutolink = function(block) {
+    var m;
+    var dest;
+    var node;
+    if ((m = this.match(reEmailAutolink))) {
+        dest = m.slice(1, m.length - 1);
+        node = new Node('link');
+        node._destination = normalizeURI('mailto:' + dest);
+        node._title = '';
+        node.appendChild(text(dest));
+        block.appendChild(node);
+        return true;
+    } else if ((m = this.match(reAutolink))) {
+        dest = m.slice(1, m.length - 1);
+        node = new Node('link');
+        node._destination = normalizeURI(dest);
+        node._title = '';
+        node.appendChild(text(dest));
+        block.appendChild(node);
+        return true;
+    } else {
+        return false;
+    }
+};
+
+// Attempt to parse a raw HTML tag.
+var parseHtmlTag = function(block) {
+    var m = this.match(reHtmlTag);
+    if (m === null) {
+        return false;
+    } else {
+        var node = new Node('html_inline');
+        node._literal = m;
+        block.appendChild(node);
+        return true;
+    }
+};
+
+// Scan a sequence of characters with code cc, and return information about
+// the number of delimiters and whether they are positioned such that
+// they can open and/or close emphasis or strong emphasis.  A utility
+// function for strong/emph parsing.
+var scanDelims = function(cc) {
+    var numdelims = 0;
+    var char_before, char_after, cc_after;
+    var startpos = this.pos;
+    var left_flanking, right_flanking, can_open, can_close;
+    var after_is_whitespace, after_is_punctuation, before_is_whitespace, before_is_punctuation;
+
+    if (cc === C_SINGLEQUOTE || cc === C_DOUBLEQUOTE) {
+        numdelims++;
+        this.pos++;
+    } else {
+        while (this.peek() === cc) {
+            numdelims++;
+            this.pos++;
+        }
+    }
+
+    if (numdelims === 0) {
+        return null;
+    }
+
+    char_before = startpos === 0 ? '\n' : this.subject.charAt(startpos - 1);
+
+    cc_after = this.peek();
+    if (cc_after === -1) {
+        char_after = '\n';
+    } else {
+        char_after = fromCodePoint(cc_after);
+    }
+
+    after_is_whitespace = reUnicodeWhitespaceChar.test(char_after);
+    after_is_punctuation = rePunctuation.test(char_after);
+    before_is_whitespace = reUnicodeWhitespaceChar.test(char_before);
+    before_is_punctuation = rePunctuation.test(char_before);
+
+    left_flanking = !after_is_whitespace &&
+            !(after_is_punctuation && !before_is_whitespace && !before_is_punctuation);
+    right_flanking = !before_is_whitespace &&
+            !(before_is_punctuation && !after_is_whitespace && !after_is_punctuation);
+    if (cc === C_UNDERSCORE) {
+        can_open = left_flanking &&
+            (!right_flanking || before_is_punctuation);
+        can_close = right_flanking &&
+            (!left_flanking || after_is_punctuation);
+    } else if (cc === C_SINGLEQUOTE || cc === C_DOUBLEQUOTE) {
+        can_open = left_flanking && !right_flanking;
+        can_close = right_flanking;
+    } else {
+        can_open = left_flanking;
+        can_close = right_flanking;
+    }
+    this.pos = startpos;
+    return { numdelims: numdelims,
+             can_open: can_open,
+             can_close: can_close };
+};
+
+// Handle a delimiter marker for emphasis or a quote.
+var handleDelim = function(cc, block) {
+    var res = this.scanDelims(cc);
+    if (!res) {
+        return false;
+    }
+    var numdelims = res.numdelims;
+    var startpos = this.pos;
+    var contents;
+
+    this.pos += numdelims;
+    if (cc === C_SINGLEQUOTE) {
+        contents = "\u2019";
+    } else if (cc === C_DOUBLEQUOTE) {
+        contents = "\u201C";
+    } else {
+        contents = this.subject.slice(startpos, this.pos);
+    }
+    var node = text(contents);
+    block.appendChild(node);
+
+    // Add entry to stack for this opener
+    this.delimiters = { cc: cc,
+                        numdelims: numdelims,
+                        node: node,
+                        previous: this.delimiters,
+                        next: null,
+                        can_open: res.can_open,
+                        can_close: res.can_close };
+    if (this.delimiters.previous !== null) {
+        this.delimiters.previous.next = this.delimiters;
+    }
+
+    return true;
+
+};
+
+var removeDelimiter = function(delim) {
+    if (delim.previous !== null) {
+        delim.previous.next = delim.next;
+    }
+    if (delim.next === null) {
+        // top of stack
+        this.delimiters = delim.previous;
+    } else {
+        delim.next.previous = delim.previous;
+    }
+};
+
+var removeDelimitersBetween = function(bottom, top) {
+    if (bottom.next !== top) {
+        bottom.next = top;
+        top.previous = bottom;
+    }
+};
+
+var processEmphasis = function(stack_bottom) {
+    var opener, closer, old_closer;
+    var opener_inl, closer_inl;
+    var tempstack;
+    var use_delims;
+    var tmp, next;
+    var opener_found;
+    var openers_bottom = [];
+    var odd_match = false;
+
+    openers_bottom[C_UNDERSCORE] = stack_bottom;
+    openers_bottom[C_ASTERISK] = stack_bottom;
+    openers_bottom[C_SINGLEQUOTE] = stack_bottom;
+    openers_bottom[C_DOUBLEQUOTE] = stack_bottom;
+
+    // find first closer above stack_bottom:
+    closer = this.delimiters;
+    while (closer !== null && closer.previous !== stack_bottom) {
+        closer = closer.previous;
+    }
+    // move forward, looking for closers, and handling each
+    while (closer !== null) {
+        var closercc = closer.cc;
+        if (!closer.can_close) {
+            closer = closer.next;
+        } else {
+            // found emphasis closer. now look back for first matching opener:
+            opener = closer.previous;
+            opener_found = false;
+            while (opener !== null && opener !== stack_bottom &&
+                   opener !== openers_bottom[closercc]) {
+                odd_match = (closer.can_open || opener.can_close) &&
+                    (opener.numdelims + closer.numdelims) % 3 === 0;
+                if (opener.cc === closer.cc && opener.can_open && !odd_match) {
+                    opener_found = true;
+                    break;
+                }
+                opener = opener.previous;
+            }
+            old_closer = closer;
+
+            if (closercc === C_ASTERISK || closercc === C_UNDERSCORE) {
+                if (!opener_found) {
+                    closer = closer.next;
+                } else {
+                    // calculate actual number of delimiters used from closer
+                    if (closer.numdelims < 3 || opener.numdelims < 3) {
+                        use_delims = closer.numdelims <= opener.numdelims ?
+                            closer.numdelims : opener.numdelims;
+                    } else {
+                        use_delims = closer.numdelims % 2 === 0 ? 2 : 1;
+                    }
+
+                    opener_inl = opener.node;
+                    closer_inl = closer.node;
+
+                    // remove used delimiters from stack elts and inlines
+                    opener.numdelims -= use_delims;
+                    closer.numdelims -= use_delims;
+                    opener_inl._literal =
+                        opener_inl._literal.slice(0,
+                                                  opener_inl._literal.length - use_delims);
+                    closer_inl._literal =
+                        closer_inl._literal.slice(0,
+                                                  closer_inl._literal.length - use_delims);
+
+                    // build contents for new emph element
+                    var emph = new Node(use_delims === 1 ? 'emph' : 'strong');
+
+                    tmp = opener_inl._next;
+                    while (tmp && tmp !== closer_inl) {
+                        next = tmp._next;
+                        tmp.unlink();
+                        emph.appendChild(tmp);
+                        tmp = next;
+                    }
+
+                    opener_inl.insertAfter(emph);
+
+                    // remove elts between opener and closer in delimiters stack
+                    removeDelimitersBetween(opener, closer);
+
+                    // if opener has 0 delims, remove it and the inline
+                    if (opener.numdelims === 0) {
+                        opener_inl.unlink();
+                        this.removeDelimiter(opener);
+                    }
+
+                    if (closer.numdelims === 0) {
+                        closer_inl.unlink();
+                        tempstack = closer.next;
+                        this.removeDelimiter(closer);
+                        closer = tempstack;
+                    }
+
+                }
+
+            } else if (closercc === C_SINGLEQUOTE) {
+                closer.node._literal = "\u2019";
+                if (opener_found) {
+                    opener.node._literal = "\u2018";
+                }
+                closer = closer.next;
+
+            } else if (closercc === C_DOUBLEQUOTE) {
+                closer.node._literal = "\u201D";
+                if (opener_found) {
+                    opener.node.literal = "\u201C";
+                }
+                closer = closer.next;
+
+            }
+            if (!opener_found && !odd_match) {
+                // Set lower bound for future searches for openers:
+                // We don't do this with odd_match because a **
+                // that doesn't match an earlier * might turn into
+                // an opener, and the * might be matched by something
+                // else.
+                openers_bottom[closercc] = old_closer.previous;
+                if (!old_closer.can_open) {
+                    // We can remove a closer that can't be an opener,
+                    // once we've seen there's no matching opener:
+                    this.removeDelimiter(old_closer);
+                }
+            }
+        }
+
+    }
+
+    // remove all delimiters
+    while (this.delimiters !== null && this.delimiters !== stack_bottom) {
+        this.removeDelimiter(this.delimiters);
+    }
+};
+
+// Attempt to parse link title (sans quotes), returning the string
+// or null if no match.
+var parseLinkTitle = function() {
+    var title = this.match(reLinkTitle);
+    if (title === null) {
+        return null;
+    } else {
+        // chop off quotes from title and unescape:
+        return unescapeString(title.substr(1, title.length - 2));
+    }
+};
+
+// Attempt to parse link destination, returning the string or
+// null if no match.
+var parseLinkDestination = function() {
+    var res = this.match(reLinkDestinationBraces);
+    if (res === null) {
+        res = this.match(reLinkDestination);
+        if (res === null) {
+            return null;
+        } else {
+            return normalizeURI(unescapeString(res));
+        }
+    } else {  // chop off surrounding <..>:
+        return normalizeURI(unescapeString(res.substr(1, res.length - 2)));
+    }
+};
+
+// Attempt to parse a link label, returning number of characters parsed.
+var parseLinkLabel = function() {
+    var m = this.match(reLinkLabel);
+    if (m === null || m.length > 1001) {
+        return 0;
+    } else {
+        return m.length;
+    }
+};
+
+// Add open bracket to delimiter stack and add a text node to block's children.
+var parseOpenBracket = function(block) {
+    var startpos = this.pos;
+    this.pos += 1;
+
+    var node = text('[');
+    block.appendChild(node);
+
+    // Add entry to stack for this opener
+    this.addBracket(node, startpos, false);
+    return true;
+};
+
+// IF next character is [, and ! delimiter to delimiter stack and
+// add a text node to block's children.  Otherwise just add a text node.
+var parseBang = function(block) {
+    var startpos = this.pos;
+    this.pos += 1;
+    if (this.peek() === C_OPEN_BRACKET) {
+        this.pos += 1;
+
+        var node = text('![');
+        block.appendChild(node);
+
+        // Add entry to stack for this opener
+        this.addBracket(node, startpos + 1, true);
+    } else {
+        block.appendChild(text('!'));
+    }
+    return true;
+};
+
+// Try to match close bracket against an opening in the delimiter
+// stack.  Add either a link or image, or a plain [ character,
+// to block's children.  If there is a matching delimiter,
+// remove it from the delimiter stack.
+var parseCloseBracket = function(block) {
+    var startpos;
+    var is_image;
+    var dest;
+    var title;
+    var matched = false;
+    var reflabel;
+    var opener;
+
+    this.pos += 1;
+    startpos = this.pos;
+
+    // get last [ or ![
+    opener = this.brackets;
+
+    if (opener === null) {
+        // no matched opener, just return a literal
+        block.appendChild(text(']'));
+        return true;
+    }
+
+    if (!opener.active) {
+        // no matched opener, just return a literal
+        block.appendChild(text(']'));
+        // take opener off brackets stack
+        this.removeBracket();
+        return true;
+    }
+
+    // If we got here, open is a potential opener
+    is_image = opener.image;
+
+    // Check to see if we have a link/image
+
+    var savepos = this.pos;
+
+    // Inline link?
+    if (this.peek() === C_OPEN_PAREN) {
+        this.pos++;
+        if (this.spnl() &&
+            ((dest = this.parseLinkDestination()) !== null) &&
+            this.spnl() &&
+            // make sure there's a space before the title:
+            (reWhitespaceChar.test(this.subject.charAt(this.pos - 1)) &&
+             (title = this.parseLinkTitle()) || true) &&
+            this.spnl() &&
+            this.peek() === C_CLOSE_PAREN) {
+            this.pos += 1;
+            matched = true;
+        } else {
+            this.pos = savepos;
+        }
+    }
+
+    if (!matched) {
+
+        // Next, see if there's a link label
+        var beforelabel = this.pos;
+        var n = this.parseLinkLabel();
+        if (n > 2) {
+            reflabel = this.subject.slice(beforelabel, beforelabel + n);
+        } else if (!opener.bracketAfter) {
+            // Empty or missing second label means to use the first label as the reference.
+            // The reference must not contain a bracket. If we know there's a bracket, we don't even bother checking it.
+            reflabel = this.subject.slice(opener.index, startpos);
+        }
+        if (n === 0) {
+            // If shortcut reference link, rewind before spaces we skipped.
+            this.pos = savepos;
+        }
+
+        if (reflabel) {
+            // lookup rawlabel in refmap
+            var link = this.refmap[normalizeReference(reflabel)];
+            if (link) {
+                dest = link.destination;
+                title = link.title;
+                matched = true;
+            }
+        }
+    }
+
+    if (matched) {
+        var node = new Node(is_image ? 'image' : 'link');
+        node._destination = dest;
+        node._title = title || '';
+
+        var tmp, next;
+        tmp = opener.node._next;
+        while (tmp) {
+            next = tmp._next;
+            tmp.unlink();
+            node.appendChild(tmp);
+            tmp = next;
+        }
+        block.appendChild(node);
+        this.processEmphasis(opener.previousDelimiter);
+        this.removeBracket();
+        opener.node.unlink();
+
+        // We remove this bracket and processEmphasis will remove later delimiters.
+        // Now, for a link, we also deactivate earlier link openers.
+        // (no links in links)
+        if (!is_image) {
+          opener = this.brackets;
+          while (opener !== null) {
+            if (!opener.image) {
+                opener.active = false; // deactivate this opener
+            }
+            opener = opener.previous;
+          }
+        }
+
+        return true;
+
+    } else { // no match
+
+        this.removeBracket();  // remove this opener from stack
+        this.pos = startpos;
+        block.appendChild(text(']'));
+        return true;
+    }
+
+};
+
+var addBracket = function(node, index, image) {
+    if (this.brackets !== null) {
+        this.brackets.bracketAfter = true;
+    }
+    this.brackets = { node: node,
+                      previous: this.brackets,
+                      previousDelimiter: this.delimiters,
+                      index: index,
+                      image: image,
+                      active: true };
+};
+
+var removeBracket = function() {
+    this.brackets = this.brackets.previous;
+};
+
+// Attempt to parse an entity.
+var parseEntity = function(block) {
+    var m;
+    if ((m = this.match(reEntityHere))) {
+        block.appendChild(text(decodeHTML(m)));
+        return true;
+    } else {
+        return false;
+    }
+};
+
+// Parse a run of ordinary characters, or a single character with
+// a special meaning in markdown, as a plain string.
+var parseString = function(block) {
+    var m;
+    if ((m = this.match(reMain))) {
+        if (this.options.smart) {
+            block.appendChild(text(
+                m.replace(reEllipses, "\u2026")
+                    .replace(reDash, function(chars) {
+                        var enCount = 0;
+                        var emCount = 0;
+                        if (chars.length % 3 === 0) { // If divisible by 3, use all em dashes
+                            emCount = chars.length / 3;
+                        } else if (chars.length % 2 === 0) { // If divisible by 2, use all en dashes
+                            enCount = chars.length / 2;
+                        } else if (chars.length % 3 === 2) { // If 2 extra dashes, use en dash for last 2; em dashes for rest
+                            enCount = 1;
+                            emCount = (chars.length - 2) / 3;
+                        } else { // Use en dashes for last 4 hyphens; em dashes for rest
+                            enCount = 2;
+                            emCount = (chars.length - 4) / 3;
+                        }
+                        return "\u2014".repeat(emCount) + "\u2013".repeat(enCount);
+                    })));
+        } else {
+            block.appendChild(text(m));
+        }
+        return true;
+    } else {
+        return false;
+    }
+};
+
+// Parse a newline.  If it was preceded by two spaces, return a hard
+// line break; otherwise a soft line break.
+var parseNewline = function(block) {
+    this.pos += 1; // assume we're at a \n
+    // check previous node for trailing spaces
+    var lastc = block._lastChild;
+    if (lastc && lastc.type === 'text' && lastc._literal[lastc._literal.length - 1] === ' ') {
+        var hardbreak = lastc._literal[lastc._literal.length - 2] === ' ';
+        lastc._literal = lastc._literal.replace(reFinalSpace, '');
+        block.appendChild(new Node(hardbreak ? 'linebreak' : 'softbreak'));
+    } else {
+        block.appendChild(new Node('softbreak'));
+    }
+    this.match(reInitialSpace); // gobble leading spaces in next line
+    return true;
+};
+
+// Attempt to parse a link reference, modifying refmap.
+var parseReference = function(s, refmap) {
+    this.subject = s;
+    this.pos = 0;
+    var rawlabel;
+    var dest;
+    var title;
+    var matchChars;
+    var startpos = this.pos;
+
+    // label:
+    matchChars = this.parseLinkLabel();
+    if (matchChars === 0) {
+        return 0;
+    } else {
+        rawlabel = this.subject.substr(0, matchChars);
+    }
+
+    // colon:
+    if (this.peek() === C_COLON) {
+        this.pos++;
+    } else {
+        this.pos = startpos;
+        return 0;
+    }
+
+    //  link url
+    this.spnl();
+
+    dest = this.parseLinkDestination();
+    if (dest === null || dest.length === 0) {
+        this.pos = startpos;
+        return 0;
+    }
+
+    var beforetitle = this.pos;
+    this.spnl();
+    title = this.parseLinkTitle();
+    if (title === null) {
+        title = '';
+        // rewind before spaces
+        this.pos = beforetitle;
+    }
+
+    // make sure we're at line end:
+    var atLineEnd = true;
+    if (this.match(reSpaceAtEndOfLine) === null) {
+        if (title === '') {
+            atLineEnd = false;
+        } else {
+            // the potential title we found is not at the line end,
+            // but it could still be a legal link reference if we
+            // discard the title
+            title = '';
+            // rewind before spaces
+            this.pos = beforetitle;
+            // and instead check if the link URL is at the line end
+            atLineEnd = this.match(reSpaceAtEndOfLine) !== null;
+        }
+    }
+
+    if (!atLineEnd) {
+        this.pos = startpos;
+        return 0;
+    }
+
+    var normlabel = normalizeReference(rawlabel);
+    if (normlabel === '') {
+        // label must contain non-whitespace characters
+        this.pos = startpos;
+        return 0;
+    }
+
+    if (!refmap[normlabel]) {
+        refmap[normlabel] = { destination: dest, title: title };
+    }
+    return this.pos - startpos;
+};
+
+// Parse the next inline element in subject, advancing subject position.
+// On success, add the result to block's children and return true.
+// On failure, return false.
+var parseInline = function(block) {
+    var res = false;
+    var c = this.peek();
+    if (c === -1) {
+        return false;
+    }
+    switch(c) {
+    case C_NEWLINE:
+        res = this.parseNewline(block);
+        break;
+    case C_BACKSLASH:
+        res = this.parseBackslash(block);
+        break;
+    case C_BACKTICK:
+        res = this.parseBackticks(block);
+        break;
+    case C_ASTERISK:
+    case C_UNDERSCORE:
+        res = this.handleDelim(c, block);
+        break;
+    case C_SINGLEQUOTE:
+    case C_DOUBLEQUOTE:
+        res = this.options.smart && this.handleDelim(c, block);
+        break;
+    case C_OPEN_BRACKET:
+        res = this.parseOpenBracket(block);
+        break;
+    case C_BANG:
+        res = this.parseBang(block);
+        break;
+    case C_CLOSE_BRACKET:
+        res = this.parseCloseBracket(block);
+        break;
+    case C_LESSTHAN:
+        res = this.parseAutolink(block) || this.parseHtmlTag(block);
+        break;
+    case C_AMPERSAND:
+        res = this.parseEntity(block);
+        break;
+    default:
+        res = this.parseString(block);
+        break;
+    }
+    if (!res) {
+        this.pos += 1;
+        block.appendChild(text(fromCodePoint(c)));
+    }
+
+    return true;
+};
+
+// Parse string content in block into inline children,
+// using refmap to resolve references.
+var parseInlines = function(block) {
+    this.subject = block._string_content.trim();
+    this.pos = 0;
+    this.delimiters = null;
+    this.brackets = null;
+    while (this.parseInline(block)) {
+    }
+    block._string_content = null; // allow raw string to be garbage collected
+    this.processEmphasis(null);
+};
+
+// The InlineParser object.
+function InlineParser(options){
+    return {
+        subject: '',
+        delimiters: null,  // used by handleDelim method
+        brackets: null,
+        pos: 0,
+        refmap: {},
+        match: match,
+        peek: peek,
+        spnl: spnl,
+        parseBackticks: parseBackticks,
+        parseBackslash: parseBackslash,
+        parseAutolink: parseAutolink,
+        parseHtmlTag: parseHtmlTag,
+        scanDelims: scanDelims,
+        handleDelim: handleDelim,
+        parseLinkTitle: parseLinkTitle,
+        parseLinkDestination: parseLinkDestination,
+        parseLinkLabel: parseLinkLabel,
+        parseOpenBracket: parseOpenBracket,
+        parseBang: parseBang,
+        parseCloseBracket: parseCloseBracket,
+        addBracket: addBracket,
+        removeBracket: removeBracket,
+        parseEntity: parseEntity,
+        parseString: parseString,
+        parseNewline: parseNewline,
+        parseReference: parseReference,
+        parseInline: parseInline,
+        processEmphasis: processEmphasis,
+        removeDelimiter: removeDelimiter,
+        options: options || {},
+        parse: parseInlines
+    };
+}
+
+module.exports = InlineParser;
+
+
+/***/ }),
+/* 10 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/* The bulk of this code derives from https://github.com/dmoscrop/fold-case
+But in addition to case-folding, we also normalize whitespace.
+
+fold-case is Copyright Mathias Bynens <https://mathiasbynens.be/>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
+/*eslint-disable  key-spacing, comma-spacing */
+
+var regex = /[ \t\r\n]+|[A-Z\xB5\xC0-\xD6\xD8-\xDF\u0100\u0102\u0104\u0106\u0108\u010A\u010C\u010E\u0110\u0112\u0114\u0116\u0118\u011A\u011C\u011E\u0120\u0122\u0124\u0126\u0128\u012A\u012C\u012E\u0130\u0132\u0134\u0136\u0139\u013B\u013D\u013F\u0141\u0143\u0145\u0147\u0149\u014A\u014C\u014E\u0150\u0152\u0154\u0156\u0158\u015A\u015C\u015E\u0160\u0162\u0164\u0166\u0168\u016A\u016C\u016E\u0170\u0172\u0174\u0176\u0178\u0179\u017B\u017D\u017F\u0181\u0182\u0184\u0186\u0187\u0189-\u018B\u018E-\u0191\u0193\u0194\u0196-\u0198\u019C\u019D\u019F\u01A0\u01A2\u01A4\u01A6\u01A7\u01A9\u01AC\u01AE\u01AF\u01B1-\u01B3\u01B5\u01B7\u01B8\u01BC\u01C4\u01C5\u01C7\u01C8\u01CA\u01CB\u01CD\u01CF\u01D1\u01D3\u01D5\u01D7\u01D9\u01DB\u01DE\u01E0\u01E2\u01E4\u01E6\u01E8\u01EA\u01EC\u01EE\u01F0-\u01F2\u01F4\u01F6-\u01F8\u01FA\u01FC\u01FE\u0200\u0202\u0204\u0206\u0208\u020A\u020C\u020E\u0210\u0212\u0214\u0216\u0218\u021A\u021C\u021E\u0220\u0222\u0224\u0226\u0228\u022A\u022C\u022E\u0230\u0232\u023A\u023B\u023D\u023E\u0241\u0243-\u0246\u0248\u024A\u024C\u024E\u0345\u0370\u0372\u0376\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03AB\u03B0\u03C2\u03CF-\u03D1\u03D5\u03D6\u03D8\u03DA\u03DC\u03DE\u03E0\u03E2\u03E4\u03E6\u03E8\u03EA\u03EC\u03EE\u03F0\u03F1\u03F4\u03F5\u03F7\u03F9\u03FA\u03FD-\u042F\u0460\u0462\u0464\u0466\u0468\u046A\u046C\u046E\u0470\u0472\u0474\u0476\u0478\u047A\u047C\u047E\u0480\u048A\u048C\u048E\u0490\u0492\u0494\u0496\u0498\u049A\u049C\u049E\u04A0\u04A2\u04A4\u04A6\u04A8\u04AA\u04AC\u04AE\u04B0\u04B2\u04B4\u04B6\u04B8\u04BA\u04BC\u04BE\u04C0\u04C1\u04C3\u04C5\u04C7\u04C9\u04CB\u04CD\u04D0\u04D2\u04D4\u04D6\u04D8\u04DA\u04DC\u04DE\u04E0\u04E2\u04E4\u04E6\u04E8\u04EA\u04EC\u04EE\u04F0\u04F2\u04F4\u04F6\u04F8\u04FA\u04FC\u04FE\u0500\u0502\u0504\u0506\u0508\u050A\u050C\u050E\u0510\u0512\u0514\u0516\u0518\u051A\u051C\u051E\u0520\u0522\u0524\u0526\u0528\u052A\u052C\u052E\u0531-\u0556\u0587\u10A0-\u10C5\u10C7\u10CD\u1E00\u1E02\u1E04\u1E06\u1E08\u1E0A\u1E0C\u1E0E\u1E10\u1E12\u1E14\u1E16\u1E18\u1E1A\u1E1C\u1E1E\u1E20\u1E22\u1E24\u1E26\u1E28\u1E2A\u1E2C\u1E2E\u1E30\u1E32\u1E34\u1E36\u1E38\u1E3A\u1E3C\u1E3E\u1E40\u1E42\u1E44\u1E46\u1E48\u1E4A\u1E4C\u1E4E\u1E50\u1E52\u1E54\u1E56\u1E58\u1E5A\u1E5C\u1E5E\u1E60\u1E62\u1E64\u1E66\u1E68\u1E6A\u1E6C\u1E6E\u1E70\u1E72\u1E74\u1E76\u1E78\u1E7A\u1E7C\u1E7E\u1E80\u1E82\u1E84\u1E86\u1E88\u1E8A\u1E8C\u1E8E\u1E90\u1E92\u1E94\u1E96-\u1E9B\u1E9E\u1EA0\u1EA2\u1EA4\u1EA6\u1EA8\u1EAA\u1EAC\u1EAE\u1EB0\u1EB2\u1EB4\u1EB6\u1EB8\u1EBA\u1EBC\u1EBE\u1EC0\u1EC2\u1EC4\u1EC6\u1EC8\u1ECA\u1ECC\u1ECE\u1ED0\u1ED2\u1ED4\u1ED6\u1ED8\u1EDA\u1EDC\u1EDE\u1EE0\u1EE2\u1EE4\u1EE6\u1EE8\u1EEA\u1EEC\u1EEE\u1EF0\u1EF2\u1EF4\u1EF6\u1EF8\u1EFA\u1EFC\u1EFE\u1F08-\u1F0F\u1F18-\u1F1D\u1F28-\u1F2F\u1F38-\u1F3F\u1F48-\u1F4D\u1F50\u1F52\u1F54\u1F56\u1F59\u1F5B\u1F5D\u1F5F\u1F68-\u1F6F\u1F80-\u1FAF\u1FB2-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD2\u1FD3\u1FD6-\u1FDB\u1FE2-\u1FE4\u1FE6-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2126\u212A\u212B\u2132\u2160-\u216F\u2183\u24B6-\u24CF\u2C00-\u2C2E\u2C60\u2C62-\u2C64\u2C67\u2C69\u2C6B\u2C6D-\u2C70\u2C72\u2C75\u2C7E-\u2C80\u2C82\u2C84\u2C86\u2C88\u2C8A\u2C8C\u2C8E\u2C90\u2C92\u2C94\u2C96\u2C98\u2C9A\u2C9C\u2C9E\u2CA0\u2CA2\u2CA4\u2CA6\u2CA8\u2CAA\u2CAC\u2CAE\u2CB0\u2CB2\u2CB4\u2CB6\u2CB8\u2CBA\u2CBC\u2CBE\u2CC0\u2CC2\u2CC4\u2CC6\u2CC8\u2CCA\u2CCC\u2CCE\u2CD0\u2CD2\u2CD4\u2CD6\u2CD8\u2CDA\u2CDC\u2CDE\u2CE0\u2CE2\u2CEB\u2CED\u2CF2\uA640\uA642\uA644\uA646\uA648\uA64A\uA64C\uA64E\uA650\uA652\uA654\uA656\uA658\uA65A\uA65C\uA65E\uA660\uA662\uA664\uA666\uA668\uA66A\uA66C\uA680\uA682\uA684\uA686\uA688\uA68A\uA68C\uA68E\uA690\uA692\uA694\uA696\uA698\uA69A\uA722\uA724\uA726\uA728\uA72A\uA72C\uA72E\uA732\uA734\uA736\uA738\uA73A\uA73C\uA73E\uA740\uA742\uA744\uA746\uA748\uA74A\uA74C\uA74E\uA750\uA752\uA754\uA756\uA758\uA75A\uA75C\uA75E\uA760\uA762\uA764\uA766\uA768\uA76A\uA76C\uA76E\uA779\uA77B\uA77D\uA77E\uA780\uA782\uA784\uA786\uA78B\uA78D\uA790\uA792\uA796\uA798\uA79A\uA79C\uA79E\uA7A0\uA7A2\uA7A4\uA7A6\uA7A8\uA7AA-\uA7AD\uA7B0\uA7B1\uFB00-\uFB06\uFB13-\uFB17\uFF21-\uFF3A]|\uD801[\uDC00-\uDC27]|\uD806[\uDCA0-\uDCBF]/g;
+
+var map = {'A':'a','B':'b','C':'c','D':'d','E':'e','F':'f','G':'g','H':'h','I':'i','J':'j','K':'k','L':'l','M':'m','N':'n','O':'o','P':'p','Q':'q','R':'r','S':'s','T':'t','U':'u','V':'v','W':'w','X':'x','Y':'y','Z':'z','\xB5':'\u03BC','\xC0':'\xE0','\xC1':'\xE1','\xC2':'\xE2','\xC3':'\xE3','\xC4':'\xE4','\xC5':'\xE5','\xC6':'\xE6','\xC7':'\xE7','\xC8':'\xE8','\xC9':'\xE9','\xCA':'\xEA','\xCB':'\xEB','\xCC':'\xEC','\xCD':'\xED','\xCE':'\xEE','\xCF':'\xEF','\xD0':'\xF0','\xD1':'\xF1','\xD2':'\xF2','\xD3':'\xF3','\xD4':'\xF4','\xD5':'\xF5','\xD6':'\xF6','\xD8':'\xF8','\xD9':'\xF9','\xDA':'\xFA','\xDB':'\xFB','\xDC':'\xFC','\xDD':'\xFD','\xDE':'\xFE','\u0100':'\u0101','\u0102':'\u0103','\u0104':'\u0105','\u0106':'\u0107','\u0108':'\u0109','\u010A':'\u010B','\u010C':'\u010D','\u010E':'\u010F','\u0110':'\u0111','\u0112':'\u0113','\u0114':'\u0115','\u0116':'\u0117','\u0118':'\u0119','\u011A':'\u011B','\u011C':'\u011D','\u011E':'\u011F','\u0120':'\u0121','\u0122':'\u0123','\u0124':'\u0125','\u0126':'\u0127','\u0128':'\u0129','\u012A':'\u012B','\u012C':'\u012D','\u012E':'\u012F','\u0132':'\u0133','\u0134':'\u0135','\u0136':'\u0137','\u0139':'\u013A','\u013B':'\u013C','\u013D':'\u013E','\u013F':'\u0140','\u0141':'\u0142','\u0143':'\u0144','\u0145':'\u0146','\u0147':'\u0148','\u014A':'\u014B','\u014C':'\u014D','\u014E':'\u014F','\u0150':'\u0151','\u0152':'\u0153','\u0154':'\u0155','\u0156':'\u0157','\u0158':'\u0159','\u015A':'\u015B','\u015C':'\u015D','\u015E':'\u015F','\u0160':'\u0161','\u0162':'\u0163','\u0164':'\u0165','\u0166':'\u0167','\u0168':'\u0169','\u016A':'\u016B','\u016C':'\u016D','\u016E':'\u016F','\u0170':'\u0171','\u0172':'\u0173','\u0174':'\u0175','\u0176':'\u0177','\u0178':'\xFF','\u0179':'\u017A','\u017B':'\u017C','\u017D':'\u017E','\u017F':'s','\u0181':'\u0253','\u0182':'\u0183','\u0184':'\u0185','\u0186':'\u0254','\u0187':'\u0188','\u0189':'\u0256','\u018A':'\u0257','\u018B':'\u018C','\u018E':'\u01DD','\u018F':'\u0259','\u0190':'\u025B','\u0191':'\u0192','\u0193':'\u0260','\u0194':'\u0263','\u0196':'\u0269','\u0197':'\u0268','\u0198':'\u0199','\u019C':'\u026F','\u019D':'\u0272','\u019F':'\u0275','\u01A0':'\u01A1','\u01A2':'\u01A3','\u01A4':'\u01A5','\u01A6':'\u0280','\u01A7':'\u01A8','\u01A9':'\u0283','\u01AC':'\u01AD','\u01AE':'\u0288','\u01AF':'\u01B0','\u01B1':'\u028A','\u01B2':'\u028B','\u01B3':'\u01B4','\u01B5':'\u01B6','\u01B7':'\u0292','\u01B8':'\u01B9','\u01BC':'\u01BD','\u01C4':'\u01C6','\u01C5':'\u01C6','\u01C7':'\u01C9','\u01C8':'\u01C9','\u01CA':'\u01CC','\u01CB':'\u01CC','\u01CD':'\u01CE','\u01CF':'\u01D0','\u01D1':'\u01D2','\u01D3':'\u01D4','\u01D5':'\u01D6','\u01D7':'\u01D8','\u01D9':'\u01DA','\u01DB':'\u01DC','\u01DE':'\u01DF','\u01E0':'\u01E1','\u01E2':'\u01E3','\u01E4':'\u01E5','\u01E6':'\u01E7','\u01E8':'\u01E9','\u01EA':'\u01EB','\u01EC':'\u01ED','\u01EE':'\u01EF','\u01F1':'\u01F3','\u01F2':'\u01F3','\u01F4':'\u01F5','\u01F6':'\u0195','\u01F7':'\u01BF','\u01F8':'\u01F9','\u01FA':'\u01FB','\u01FC':'\u01FD','\u01FE':'\u01FF','\u0200':'\u0201','\u0202':'\u0203','\u0204':'\u0205','\u0206':'\u0207','\u0208':'\u0209','\u020A':'\u020B','\u020C':'\u020D','\u020E':'\u020F','\u0210':'\u0211','\u0212':'\u0213','\u0214':'\u0215','\u0216':'\u0217','\u0218':'\u0219','\u021A':'\u021B','\u021C':'\u021D','\u021E':'\u021F','\u0220':'\u019E','\u0222':'\u0223','\u0224':'\u0225','\u0226':'\u0227','\u0228':'\u0229','\u022A':'\u022B','\u022C':'\u022D','\u022E':'\u022F','\u0230':'\u0231','\u0232':'\u0233','\u023A':'\u2C65','\u023B':'\u023C','\u023D':'\u019A','\u023E':'\u2C66','\u0241':'\u0242','\u0243':'\u0180','\u0244':'\u0289','\u0245':'\u028C','\u0246':'\u0247','\u0248':'\u0249','\u024A':'\u024B','\u024C':'\u024D','\u024E':'\u024F','\u0345':'\u03B9','\u0370':'\u0371','\u0372':'\u0373','\u0376':'\u0377','\u037F':'\u03F3','\u0386':'\u03AC','\u0388':'\u03AD','\u0389':'\u03AE','\u038A':'\u03AF','\u038C':'\u03CC','\u038E':'\u03CD','\u038F':'\u03CE','\u0391':'\u03B1','\u0392':'\u03B2','\u0393':'\u03B3','\u0394':'\u03B4','\u0395':'\u03B5','\u0396':'\u03B6','\u0397':'\u03B7','\u0398':'\u03B8','\u0399':'\u03B9','\u039A':'\u03BA','\u039B':'\u03BB','\u039C':'\u03BC','\u039D':'\u03BD','\u039E':'\u03BE','\u039F':'\u03BF','\u03A0':'\u03C0','\u03A1':'\u03C1','\u03A3':'\u03C3','\u03A4':'\u03C4','\u03A5':'\u03C5','\u03A6':'\u03C6','\u03A7':'\u03C7','\u03A8':'\u03C8','\u03A9':'\u03C9','\u03AA':'\u03CA','\u03AB':'\u03CB','\u03C2':'\u03C3','\u03CF':'\u03D7','\u03D0':'\u03B2','\u03D1':'\u03B8','\u03D5':'\u03C6','\u03D6':'\u03C0','\u03D8':'\u03D9','\u03DA':'\u03DB','\u03DC':'\u03DD','\u03DE':'\u03DF','\u03E0':'\u03E1','\u03E2':'\u03E3','\u03E4':'\u03E5','\u03E6':'\u03E7','\u03E8':'\u03E9','\u03EA':'\u03EB','\u03EC':'\u03ED','\u03EE':'\u03EF','\u03F0':'\u03BA','\u03F1':'\u03C1','\u03F4':'\u03B8','\u03F5':'\u03B5','\u03F7':'\u03F8','\u03F9':'\u03F2','\u03FA':'\u03FB','\u03FD':'\u037B','\u03FE':'\u037C','\u03FF':'\u037D','\u0400':'\u0450','\u0401':'\u0451','\u0402':'\u0452','\u0403':'\u0453','\u0404':'\u0454','\u0405':'\u0455','\u0406':'\u0456','\u0407':'\u0457','\u0408':'\u0458','\u0409':'\u0459','\u040A':'\u045A','\u040B':'\u045B','\u040C':'\u045C','\u040D':'\u045D','\u040E':'\u045E','\u040F':'\u045F','\u0410':'\u0430','\u0411':'\u0431','\u0412':'\u0432','\u0413':'\u0433','\u0414':'\u0434','\u0415':'\u0435','\u0416':'\u0436','\u0417':'\u0437','\u0418':'\u0438','\u0419':'\u0439','\u041A':'\u043A','\u041B':'\u043B','\u041C':'\u043C','\u041D':'\u043D','\u041E':'\u043E','\u041F':'\u043F','\u0420':'\u0440','\u0421':'\u0441','\u0422':'\u0442','\u0423':'\u0443','\u0424':'\u0444','\u0425':'\u0445','\u0426':'\u0446','\u0427':'\u0447','\u0428':'\u0448','\u0429':'\u0449','\u042A':'\u044A','\u042B':'\u044B','\u042C':'\u044C','\u042D':'\u044D','\u042E':'\u044E','\u042F':'\u044F','\u0460':'\u0461','\u0462':'\u0463','\u0464':'\u0465','\u0466':'\u0467','\u0468':'\u0469','\u046A':'\u046B','\u046C':'\u046D','\u046E':'\u046F','\u0470':'\u0471','\u0472':'\u0473','\u0474':'\u0475','\u0476':'\u0477','\u0478':'\u0479','\u047A':'\u047B','\u047C':'\u047D','\u047E':'\u047F','\u0480':'\u0481','\u048A':'\u048B','\u048C':'\u048D','\u048E':'\u048F','\u0490':'\u0491','\u0492':'\u0493','\u0494':'\u0495','\u0496':'\u0497','\u0498':'\u0499','\u049A':'\u049B','\u049C':'\u049D','\u049E':'\u049F','\u04A0':'\u04A1','\u04A2':'\u04A3','\u04A4':'\u04A5','\u04A6':'\u04A7','\u04A8':'\u04A9','\u04AA':'\u04AB','\u04AC':'\u04AD','\u04AE':'\u04AF','\u04B0':'\u04B1','\u04B2':'\u04B3','\u04B4':'\u04B5','\u04B6':'\u04B7','\u04B8':'\u04B9','\u04BA':'\u04BB','\u04BC':'\u04BD','\u04BE':'\u04BF','\u04C0':'\u04CF','\u04C1':'\u04C2','\u04C3':'\u04C4','\u04C5':'\u04C6','\u04C7':'\u04C8','\u04C9':'\u04CA','\u04CB':'\u04CC','\u04CD':'\u04CE','\u04D0':'\u04D1','\u04D2':'\u04D3','\u04D4':'\u04D5','\u04D6':'\u04D7','\u04D8':'\u04D9','\u04DA':'\u04DB','\u04DC':'\u04DD','\u04DE':'\u04DF','\u04E0':'\u04E1','\u04E2':'\u04E3','\u04E4':'\u04E5','\u04E6':'\u04E7','\u04E8':'\u04E9','\u04EA':'\u04EB','\u04EC':'\u04ED','\u04EE':'\u04EF','\u04F0':'\u04F1','\u04F2':'\u04F3','\u04F4':'\u04F5','\u04F6':'\u04F7','\u04F8':'\u04F9','\u04FA':'\u04FB','\u04FC':'\u04FD','\u04FE':'\u04FF','\u0500':'\u0501','\u0502':'\u0503','\u0504':'\u0505','\u0506':'\u0507','\u0508':'\u0509','\u050A':'\u050B','\u050C':'\u050D','\u050E':'\u050F','\u0510':'\u0511','\u0512':'\u0513','\u0514':'\u0515','\u0516':'\u0517','\u0518':'\u0519','\u051A':'\u051B','\u051C':'\u051D','\u051E':'\u051F','\u0520':'\u0521','\u0522':'\u0523','\u0524':'\u0525','\u0526':'\u0527','\u0528':'\u0529','\u052A':'\u052B','\u052C':'\u052D','\u052E':'\u052F','\u0531':'\u0561','\u0532':'\u0562','\u0533':'\u0563','\u0534':'\u0564','\u0535':'\u0565','\u0536':'\u0566','\u0537':'\u0567','\u0538':'\u0568','\u0539':'\u0569','\u053A':'\u056A','\u053B':'\u056B','\u053C':'\u056C','\u053D':'\u056D','\u053E':'\u056E','\u053F':'\u056F','\u0540':'\u0570','\u0541':'\u0571','\u0542':'\u0572','\u0543':'\u0573','\u0544':'\u0574','\u0545':'\u0575','\u0546':'\u0576','\u0547':'\u0577','\u0548':'\u0578','\u0549':'\u0579','\u054A':'\u057A','\u054B':'\u057B','\u054C':'\u057C','\u054D':'\u057D','\u054E':'\u057E','\u054F':'\u057F','\u0550':'\u0580','\u0551':'\u0581','\u0552':'\u0582','\u0553':'\u0583','\u0554':'\u0584','\u0555':'\u0585','\u0556':'\u0586','\u10A0':'\u2D00','\u10A1':'\u2D01','\u10A2':'\u2D02','\u10A3':'\u2D03','\u10A4':'\u2D04','\u10A5':'\u2D05','\u10A6':'\u2D06','\u10A7':'\u2D07','\u10A8':'\u2D08','\u10A9':'\u2D09','\u10AA':'\u2D0A','\u10AB':'\u2D0B','\u10AC':'\u2D0C','\u10AD':'\u2D0D','\u10AE':'\u2D0E','\u10AF':'\u2D0F','\u10B0':'\u2D10','\u10B1':'\u2D11','\u10B2':'\u2D12','\u10B3':'\u2D13','\u10B4':'\u2D14','\u10B5':'\u2D15','\u10B6':'\u2D16','\u10B7':'\u2D17','\u10B8':'\u2D18','\u10B9':'\u2D19','\u10BA':'\u2D1A','\u10BB':'\u2D1B','\u10BC':'\u2D1C','\u10BD':'\u2D1D','\u10BE':'\u2D1E','\u10BF':'\u2D1F','\u10C0':'\u2D20','\u10C1':'\u2D21','\u10C2':'\u2D22','\u10C3':'\u2D23','\u10C4':'\u2D24','\u10C5':'\u2D25','\u10C7':'\u2D27','\u10CD':'\u2D2D','\u1E00':'\u1E01','\u1E02':'\u1E03','\u1E04':'\u1E05','\u1E06':'\u1E07','\u1E08':'\u1E09','\u1E0A':'\u1E0B','\u1E0C':'\u1E0D','\u1E0E':'\u1E0F','\u1E10':'\u1E11','\u1E12':'\u1E13','\u1E14':'\u1E15','\u1E16':'\u1E17','\u1E18':'\u1E19','\u1E1A':'\u1E1B','\u1E1C':'\u1E1D','\u1E1E':'\u1E1F','\u1E20':'\u1E21','\u1E22':'\u1E23','\u1E24':'\u1E25','\u1E26':'\u1E27','\u1E28':'\u1E29','\u1E2A':'\u1E2B','\u1E2C':'\u1E2D','\u1E2E':'\u1E2F','\u1E30':'\u1E31','\u1E32':'\u1E33','\u1E34':'\u1E35','\u1E36':'\u1E37','\u1E38':'\u1E39','\u1E3A':'\u1E3B','\u1E3C':'\u1E3D','\u1E3E':'\u1E3F','\u1E40':'\u1E41','\u1E42':'\u1E43','\u1E44':'\u1E45','\u1E46':'\u1E47','\u1E48':'\u1E49','\u1E4A':'\u1E4B','\u1E4C':'\u1E4D','\u1E4E':'\u1E4F','\u1E50':'\u1E51','\u1E52':'\u1E53','\u1E54':'\u1E55','\u1E56':'\u1E57','\u1E58':'\u1E59','\u1E5A':'\u1E5B','\u1E5C':'\u1E5D','\u1E5E':'\u1E5F','\u1E60':'\u1E61','\u1E62':'\u1E63','\u1E64':'\u1E65','\u1E66':'\u1E67','\u1E68':'\u1E69','\u1E6A':'\u1E6B','\u1E6C':'\u1E6D','\u1E6E':'\u1E6F','\u1E70':'\u1E71','\u1E72':'\u1E73','\u1E74':'\u1E75','\u1E76':'\u1E77','\u1E78':'\u1E79','\u1E7A':'\u1E7B','\u1E7C':'\u1E7D','\u1E7E':'\u1E7F','\u1E80':'\u1E81','\u1E82':'\u1E83','\u1E84':'\u1E85','\u1E86':'\u1E87','\u1E88':'\u1E89','\u1E8A':'\u1E8B','\u1E8C':'\u1E8D','\u1E8E':'\u1E8F','\u1E90':'\u1E91','\u1E92':'\u1E93','\u1E94':'\u1E95','\u1E9B':'\u1E61','\u1EA0':'\u1EA1','\u1EA2':'\u1EA3','\u1EA4':'\u1EA5','\u1EA6':'\u1EA7','\u1EA8':'\u1EA9','\u1EAA':'\u1EAB','\u1EAC':'\u1EAD','\u1EAE':'\u1EAF','\u1EB0':'\u1EB1','\u1EB2':'\u1EB3','\u1EB4':'\u1EB5','\u1EB6':'\u1EB7','\u1EB8':'\u1EB9','\u1EBA':'\u1EBB','\u1EBC':'\u1EBD','\u1EBE':'\u1EBF','\u1EC0':'\u1EC1','\u1EC2':'\u1EC3','\u1EC4':'\u1EC5','\u1EC6':'\u1EC7','\u1EC8':'\u1EC9','\u1ECA':'\u1ECB','\u1ECC':'\u1ECD','\u1ECE':'\u1ECF','\u1ED0':'\u1ED1','\u1ED2':'\u1ED3','\u1ED4':'\u1ED5','\u1ED6':'\u1ED7','\u1ED8':'\u1ED9','\u1EDA':'\u1EDB','\u1EDC':'\u1EDD','\u1EDE':'\u1EDF','\u1EE0':'\u1EE1','\u1EE2':'\u1EE3','\u1EE4':'\u1EE5','\u1EE6':'\u1EE7','\u1EE8':'\u1EE9','\u1EEA':'\u1EEB','\u1EEC':'\u1EED','\u1EEE':'\u1EEF','\u1EF0':'\u1EF1','\u1EF2':'\u1EF3','\u1EF4':'\u1EF5','\u1EF6':'\u1EF7','\u1EF8':'\u1EF9','\u1EFA':'\u1EFB','\u1EFC':'\u1EFD','\u1EFE':'\u1EFF','\u1F08':'\u1F00','\u1F09':'\u1F01','\u1F0A':'\u1F02','\u1F0B':'\u1F03','\u1F0C':'\u1F04','\u1F0D':'\u1F05','\u1F0E':'\u1F06','\u1F0F':'\u1F07','\u1F18':'\u1F10','\u1F19':'\u1F11','\u1F1A':'\u1F12','\u1F1B':'\u1F13','\u1F1C':'\u1F14','\u1F1D':'\u1F15','\u1F28':'\u1F20','\u1F29':'\u1F21','\u1F2A':'\u1F22','\u1F2B':'\u1F23','\u1F2C':'\u1F24','\u1F2D':'\u1F25','\u1F2E':'\u1F26','\u1F2F':'\u1F27','\u1F38':'\u1F30','\u1F39':'\u1F31','\u1F3A':'\u1F32','\u1F3B':'\u1F33','\u1F3C':'\u1F34','\u1F3D':'\u1F35','\u1F3E':'\u1F36','\u1F3F':'\u1F37','\u1F48':'\u1F40','\u1F49':'\u1F41','\u1F4A':'\u1F42','\u1F4B':'\u1F43','\u1F4C':'\u1F44','\u1F4D':'\u1F45','\u1F59':'\u1F51','\u1F5B':'\u1F53','\u1F5D':'\u1F55','\u1F5F':'\u1F57','\u1F68':'\u1F60','\u1F69':'\u1F61','\u1F6A':'\u1F62','\u1F6B':'\u1F63','\u1F6C':'\u1F64','\u1F6D':'\u1F65','\u1F6E':'\u1F66','\u1F6F':'\u1F67','\u1FB8':'\u1FB0','\u1FB9':'\u1FB1','\u1FBA':'\u1F70','\u1FBB':'\u1F71','\u1FBE':'\u03B9','\u1FC8':'\u1F72','\u1FC9':'\u1F73','\u1FCA':'\u1F74','\u1FCB':'\u1F75','\u1FD8':'\u1FD0','\u1FD9':'\u1FD1','\u1FDA':'\u1F76','\u1FDB':'\u1F77','\u1FE8':'\u1FE0','\u1FE9':'\u1FE1','\u1FEA':'\u1F7A','\u1FEB':'\u1F7B','\u1FEC':'\u1FE5','\u1FF8':'\u1F78','\u1FF9':'\u1F79','\u1FFA':'\u1F7C','\u1FFB':'\u1F7D','\u2126':'\u03C9','\u212A':'k','\u212B':'\xE5','\u2132':'\u214E','\u2160':'\u2170','\u2161':'\u2171','\u2162':'\u2172','\u2163':'\u2173','\u2164':'\u2174','\u2165':'\u2175','\u2166':'\u2176','\u2167':'\u2177','\u2168':'\u2178','\u2169':'\u2179','\u216A':'\u217A','\u216B':'\u217B','\u216C':'\u217C','\u216D':'\u217D','\u216E':'\u217E','\u216F':'\u217F','\u2183':'\u2184','\u24B6':'\u24D0','\u24B7':'\u24D1','\u24B8':'\u24D2','\u24B9':'\u24D3','\u24BA':'\u24D4','\u24BB':'\u24D5','\u24BC':'\u24D6','\u24BD':'\u24D7','\u24BE':'\u24D8','\u24BF':'\u24D9','\u24C0':'\u24DA','\u24C1':'\u24DB','\u24C2':'\u24DC','\u24C3':'\u24DD','\u24C4':'\u24DE','\u24C5':'\u24DF','\u24C6':'\u24E0','\u24C7':'\u24E1','\u24C8':'\u24E2','\u24C9':'\u24E3','\u24CA':'\u24E4','\u24CB':'\u24E5','\u24CC':'\u24E6','\u24CD':'\u24E7','\u24CE':'\u24E8','\u24CF':'\u24E9','\u2C00':'\u2C30','\u2C01':'\u2C31','\u2C02':'\u2C32','\u2C03':'\u2C33','\u2C04':'\u2C34','\u2C05':'\u2C35','\u2C06':'\u2C36','\u2C07':'\u2C37','\u2C08':'\u2C38','\u2C09':'\u2C39','\u2C0A':'\u2C3A','\u2C0B':'\u2C3B','\u2C0C':'\u2C3C','\u2C0D':'\u2C3D','\u2C0E':'\u2C3E','\u2C0F':'\u2C3F','\u2C10':'\u2C40','\u2C11':'\u2C41','\u2C12':'\u2C42','\u2C13':'\u2C43','\u2C14':'\u2C44','\u2C15':'\u2C45','\u2C16':'\u2C46','\u2C17':'\u2C47','\u2C18':'\u2C48','\u2C19':'\u2C49','\u2C1A':'\u2C4A','\u2C1B':'\u2C4B','\u2C1C':'\u2C4C','\u2C1D':'\u2C4D','\u2C1E':'\u2C4E','\u2C1F':'\u2C4F','\u2C20':'\u2C50','\u2C21':'\u2C51','\u2C22':'\u2C52','\u2C23':'\u2C53','\u2C24':'\u2C54','\u2C25':'\u2C55','\u2C26':'\u2C56','\u2C27':'\u2C57','\u2C28':'\u2C58','\u2C29':'\u2C59','\u2C2A':'\u2C5A','\u2C2B':'\u2C5B','\u2C2C':'\u2C5C','\u2C2D':'\u2C5D','\u2C2E':'\u2C5E','\u2C60':'\u2C61','\u2C62':'\u026B','\u2C63':'\u1D7D','\u2C64':'\u027D','\u2C67':'\u2C68','\u2C69':'\u2C6A','\u2C6B':'\u2C6C','\u2C6D':'\u0251','\u2C6E':'\u0271','\u2C6F':'\u0250','\u2C70':'\u0252','\u2C72':'\u2C73','\u2C75':'\u2C76','\u2C7E':'\u023F','\u2C7F':'\u0240','\u2C80':'\u2C81','\u2C82':'\u2C83','\u2C84':'\u2C85','\u2C86':'\u2C87','\u2C88':'\u2C89','\u2C8A':'\u2C8B','\u2C8C':'\u2C8D','\u2C8E':'\u2C8F','\u2C90':'\u2C91','\u2C92':'\u2C93','\u2C94':'\u2C95','\u2C96':'\u2C97','\u2C98':'\u2C99','\u2C9A':'\u2C9B','\u2C9C':'\u2C9D','\u2C9E':'\u2C9F','\u2CA0':'\u2CA1','\u2CA2':'\u2CA3','\u2CA4':'\u2CA5','\u2CA6':'\u2CA7','\u2CA8':'\u2CA9','\u2CAA':'\u2CAB','\u2CAC':'\u2CAD','\u2CAE':'\u2CAF','\u2CB0':'\u2CB1','\u2CB2':'\u2CB3','\u2CB4':'\u2CB5','\u2CB6':'\u2CB7','\u2CB8':'\u2CB9','\u2CBA':'\u2CBB','\u2CBC':'\u2CBD','\u2CBE':'\u2CBF','\u2CC0':'\u2CC1','\u2CC2':'\u2CC3','\u2CC4':'\u2CC5','\u2CC6':'\u2CC7','\u2CC8':'\u2CC9','\u2CCA':'\u2CCB','\u2CCC':'\u2CCD','\u2CCE':'\u2CCF','\u2CD0':'\u2CD1','\u2CD2':'\u2CD3','\u2CD4':'\u2CD5','\u2CD6':'\u2CD7','\u2CD8':'\u2CD9','\u2CDA':'\u2CDB','\u2CDC':'\u2CDD','\u2CDE':'\u2CDF','\u2CE0':'\u2CE1','\u2CE2':'\u2CE3','\u2CEB':'\u2CEC','\u2CED':'\u2CEE','\u2CF2':'\u2CF3','\uA640':'\uA641','\uA642':'\uA643','\uA644':'\uA645','\uA646':'\uA647','\uA648':'\uA649','\uA64A':'\uA64B','\uA64C':'\uA64D','\uA64E':'\uA64F','\uA650':'\uA651','\uA652':'\uA653','\uA654':'\uA655','\uA656':'\uA657','\uA658':'\uA659','\uA65A':'\uA65B','\uA65C':'\uA65D','\uA65E':'\uA65F','\uA660':'\uA661','\uA662':'\uA663','\uA664':'\uA665','\uA666':'\uA667','\uA668':'\uA669','\uA66A':'\uA66B','\uA66C':'\uA66D','\uA680':'\uA681','\uA682':'\uA683','\uA684':'\uA685','\uA686':'\uA687','\uA688':'\uA689','\uA68A':'\uA68B','\uA68C':'\uA68D','\uA68E':'\uA68F','\uA690':'\uA691','\uA692':'\uA693','\uA694':'\uA695','\uA696':'\uA697','\uA698':'\uA699','\uA69A':'\uA69B','\uA722':'\uA723','\uA724':'\uA725','\uA726':'\uA727','\uA728':'\uA729','\uA72A':'\uA72B','\uA72C':'\uA72D','\uA72E':'\uA72F','\uA732':'\uA733','\uA734':'\uA735','\uA736':'\uA737','\uA738':'\uA739','\uA73A':'\uA73B','\uA73C':'\uA73D','\uA73E':'\uA73F','\uA740':'\uA741','\uA742':'\uA743','\uA744':'\uA745','\uA746':'\uA747','\uA748':'\uA749','\uA74A':'\uA74B','\uA74C':'\uA74D','\uA74E':'\uA74F','\uA750':'\uA751','\uA752':'\uA753','\uA754':'\uA755','\uA756':'\uA757','\uA758':'\uA759','\uA75A':'\uA75B','\uA75C':'\uA75D','\uA75E':'\uA75F','\uA760':'\uA761','\uA762':'\uA763','\uA764':'\uA765','\uA766':'\uA767','\uA768':'\uA769','\uA76A':'\uA76B','\uA76C':'\uA76D','\uA76E':'\uA76F','\uA779':'\uA77A','\uA77B':'\uA77C','\uA77D':'\u1D79','\uA77E':'\uA77F','\uA780':'\uA781','\uA782':'\uA783','\uA784':'\uA785','\uA786':'\uA787','\uA78B':'\uA78C','\uA78D':'\u0265','\uA790':'\uA791','\uA792':'\uA793','\uA796':'\uA797','\uA798':'\uA799','\uA79A':'\uA79B','\uA79C':'\uA79D','\uA79E':'\uA79F','\uA7A0':'\uA7A1','\uA7A2':'\uA7A3','\uA7A4':'\uA7A5','\uA7A6':'\uA7A7','\uA7A8':'\uA7A9','\uA7AA':'\u0266','\uA7AB':'\u025C','\uA7AC':'\u0261','\uA7AD':'\u026C','\uA7B0':'\u029E','\uA7B1':'\u0287','\uFF21':'\uFF41','\uFF22':'\uFF42','\uFF23':'\uFF43','\uFF24':'\uFF44','\uFF25':'\uFF45','\uFF26':'\uFF46','\uFF27':'\uFF47','\uFF28':'\uFF48','\uFF29':'\uFF49','\uFF2A':'\uFF4A','\uFF2B':'\uFF4B','\uFF2C':'\uFF4C','\uFF2D':'\uFF4D','\uFF2E':'\uFF4E','\uFF2F':'\uFF4F','\uFF30':'\uFF50','\uFF31':'\uFF51','\uFF32':'\uFF52','\uFF33':'\uFF53','\uFF34':'\uFF54','\uFF35':'\uFF55','\uFF36':'\uFF56','\uFF37':'\uFF57','\uFF38':'\uFF58','\uFF39':'\uFF59','\uFF3A':'\uFF5A','\uD801\uDC00':'\uD801\uDC28','\uD801\uDC01':'\uD801\uDC29','\uD801\uDC02':'\uD801\uDC2A','\uD801\uDC03':'\uD801\uDC2B','\uD801\uDC04':'\uD801\uDC2C','\uD801\uDC05':'\uD801\uDC2D','\uD801\uDC06':'\uD801\uDC2E','\uD801\uDC07':'\uD801\uDC2F','\uD801\uDC08':'\uD801\uDC30','\uD801\uDC09':'\uD801\uDC31','\uD801\uDC0A':'\uD801\uDC32','\uD801\uDC0B':'\uD801\uDC33','\uD801\uDC0C':'\uD801\uDC34','\uD801\uDC0D':'\uD801\uDC35','\uD801\uDC0E':'\uD801\uDC36','\uD801\uDC0F':'\uD801\uDC37','\uD801\uDC10':'\uD801\uDC38','\uD801\uDC11':'\uD801\uDC39','\uD801\uDC12':'\uD801\uDC3A','\uD801\uDC13':'\uD801\uDC3B','\uD801\uDC14':'\uD801\uDC3C','\uD801\uDC15':'\uD801\uDC3D','\uD801\uDC16':'\uD801\uDC3E','\uD801\uDC17':'\uD801\uDC3F','\uD801\uDC18':'\uD801\uDC40','\uD801\uDC19':'\uD801\uDC41','\uD801\uDC1A':'\uD801\uDC42','\uD801\uDC1B':'\uD801\uDC43','\uD801\uDC1C':'\uD801\uDC44','\uD801\uDC1D':'\uD801\uDC45','\uD801\uDC1E':'\uD801\uDC46','\uD801\uDC1F':'\uD801\uDC47','\uD801\uDC20':'\uD801\uDC48','\uD801\uDC21':'\uD801\uDC49','\uD801\uDC22':'\uD801\uDC4A','\uD801\uDC23':'\uD801\uDC4B','\uD801\uDC24':'\uD801\uDC4C','\uD801\uDC25':'\uD801\uDC4D','\uD801\uDC26':'\uD801\uDC4E','\uD801\uDC27':'\uD801\uDC4F','\uD806\uDCA0':'\uD806\uDCC0','\uD806\uDCA1':'\uD806\uDCC1','\uD806\uDCA2':'\uD806\uDCC2','\uD806\uDCA3':'\uD806\uDCC3','\uD806\uDCA4':'\uD806\uDCC4','\uD806\uDCA5':'\uD806\uDCC5','\uD806\uDCA6':'\uD806\uDCC6','\uD806\uDCA7':'\uD806\uDCC7','\uD806\uDCA8':'\uD806\uDCC8','\uD806\uDCA9':'\uD806\uDCC9','\uD806\uDCAA':'\uD806\uDCCA','\uD806\uDCAB':'\uD806\uDCCB','\uD806\uDCAC':'\uD806\uDCCC','\uD806\uDCAD':'\uD806\uDCCD','\uD806\uDCAE':'\uD806\uDCCE','\uD806\uDCAF':'\uD806\uDCCF','\uD806\uDCB0':'\uD806\uDCD0','\uD806\uDCB1':'\uD806\uDCD1','\uD806\uDCB2':'\uD806\uDCD2','\uD806\uDCB3':'\uD806\uDCD3','\uD806\uDCB4':'\uD806\uDCD4','\uD806\uDCB5':'\uD806\uDCD5','\uD806\uDCB6':'\uD806\uDCD6','\uD806\uDCB7':'\uD806\uDCD7','\uD806\uDCB8':'\uD806\uDCD8','\uD806\uDCB9':'\uD806\uDCD9','\uD806\uDCBA':'\uD806\uDCDA','\uD806\uDCBB':'\uD806\uDCDB','\uD806\uDCBC':'\uD806\uDCDC','\uD806\uDCBD':'\uD806\uDCDD','\uD806\uDCBE':'\uD806\uDCDE','\uD806\uDCBF':'\uD806\uDCDF','\xDF':'ss','\u0130':'i\u0307','\u0149':'\u02BCn','\u01F0':'j\u030C','\u0390':'\u03B9\u0308\u0301','\u03B0':'\u03C5\u0308\u0301','\u0587':'\u0565\u0582','\u1E96':'h\u0331','\u1E97':'t\u0308','\u1E98':'w\u030A','\u1E99':'y\u030A','\u1E9A':'a\u02BE','\u1E9E':'ss','\u1F50':'\u03C5\u0313','\u1F52':'\u03C5\u0313\u0300','\u1F54':'\u03C5\u0313\u0301','\u1F56':'\u03C5\u0313\u0342','\u1F80':'\u1F00\u03B9','\u1F81':'\u1F01\u03B9','\u1F82':'\u1F02\u03B9','\u1F83':'\u1F03\u03B9','\u1F84':'\u1F04\u03B9','\u1F85':'\u1F05\u03B9','\u1F86':'\u1F06\u03B9','\u1F87':'\u1F07\u03B9','\u1F88':'\u1F00\u03B9','\u1F89':'\u1F01\u03B9','\u1F8A':'\u1F02\u03B9','\u1F8B':'\u1F03\u03B9','\u1F8C':'\u1F04\u03B9','\u1F8D':'\u1F05\u03B9','\u1F8E':'\u1F06\u03B9','\u1F8F':'\u1F07\u03B9','\u1F90':'\u1F20\u03B9','\u1F91':'\u1F21\u03B9','\u1F92':'\u1F22\u03B9','\u1F93':'\u1F23\u03B9','\u1F94':'\u1F24\u03B9','\u1F95':'\u1F25\u03B9','\u1F96':'\u1F26\u03B9','\u1F97':'\u1F27\u03B9','\u1F98':'\u1F20\u03B9','\u1F99':'\u1F21\u03B9','\u1F9A':'\u1F22\u03B9','\u1F9B':'\u1F23\u03B9','\u1F9C':'\u1F24\u03B9','\u1F9D':'\u1F25\u03B9','\u1F9E':'\u1F26\u03B9','\u1F9F':'\u1F27\u03B9','\u1FA0':'\u1F60\u03B9','\u1FA1':'\u1F61\u03B9','\u1FA2':'\u1F62\u03B9','\u1FA3':'\u1F63\u03B9','\u1FA4':'\u1F64\u03B9','\u1FA5':'\u1F65\u03B9','\u1FA6':'\u1F66\u03B9','\u1FA7':'\u1F67\u03B9','\u1FA8':'\u1F60\u03B9','\u1FA9':'\u1F61\u03B9','\u1FAA':'\u1F62\u03B9','\u1FAB':'\u1F63\u03B9','\u1FAC':'\u1F64\u03B9','\u1FAD':'\u1F65\u03B9','\u1FAE':'\u1F66\u03B9','\u1FAF':'\u1F67\u03B9','\u1FB2':'\u1F70\u03B9','\u1FB3':'\u03B1\u03B9','\u1FB4':'\u03AC\u03B9','\u1FB6':'\u03B1\u0342','\u1FB7':'\u03B1\u0342\u03B9','\u1FBC':'\u03B1\u03B9','\u1FC2':'\u1F74\u03B9','\u1FC3':'\u03B7\u03B9','\u1FC4':'\u03AE\u03B9','\u1FC6':'\u03B7\u0342','\u1FC7':'\u03B7\u0342\u03B9','\u1FCC':'\u03B7\u03B9','\u1FD2':'\u03B9\u0308\u0300','\u1FD3':'\u03B9\u0308\u0301','\u1FD6':'\u03B9\u0342','\u1FD7':'\u03B9\u0308\u0342','\u1FE2':'\u03C5\u0308\u0300','\u1FE3':'\u03C5\u0308\u0301','\u1FE4':'\u03C1\u0313','\u1FE6':'\u03C5\u0342','\u1FE7':'\u03C5\u0308\u0342','\u1FF2':'\u1F7C\u03B9','\u1FF3':'\u03C9\u03B9','\u1FF4':'\u03CE\u03B9','\u1FF6':'\u03C9\u0342','\u1FF7':'\u03C9\u0342\u03B9','\u1FFC':'\u03C9\u03B9','\uFB00':'ff','\uFB01':'fi','\uFB02':'fl','\uFB03':'ffi','\uFB04':'ffl','\uFB05':'st','\uFB06':'st','\uFB13':'\u0574\u0576','\uFB14':'\u0574\u0565','\uFB15':'\u0574\u056B','\uFB16':'\u057E\u0576','\uFB17':'\u0574\u056D'};
+
+// Normalize reference label: collapse internal whitespace
+// to single space, remove leading/trailing whitespace, case fold.
+module.exports = function(string) {
+    return string.slice(1, string.length - 1).trim().replace(regex, function($0) {
+        // Note: there is no need to check `hasOwnProperty($0)` here.
+        // If character not found in lookup table, it must be whitespace.
+        return map[$0] || ' ';
+    });
+};
+
+
+/***/ }),
+/* 11 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var Renderer = __webpack_require__(12);
+
+var esc = __webpack_require__(0).escapeXml;
+
+var reUnsafeProtocol = /^javascript:|vbscript:|file:|data:/i;
+var reSafeDataProtocol = /^data:image\/(?:png|gif|jpeg|webp)/i;
+
+var potentiallyUnsafe = function(url) {
+    return reUnsafeProtocol.test(url) &&
+        !reSafeDataProtocol.test(url);
+};
+
+// Helper function to produce an HTML tag.
+function tag(name, attrs, selfclosing) {
+    if (this.disableTags > 0) {
+        return;
+    }
+    this.buffer += ('<' + name);
+    if (attrs && attrs.length > 0) {
+        var i = 0;
+        var attrib;
+        while ((attrib = attrs[i]) !== undefined) {
+            this.buffer += (' ' + attrib[0] + '="' + attrib[1] + '"');
+            i++;
+        }
+    }
+    if (selfclosing) {
+        this.buffer += ' /';
+    }
+    this.buffer += '>';
+    this.lastOut = '>';
+}
+
+
+function HtmlRenderer(options) {
+  options = options || {};
+  // by default, soft breaks are rendered as newlines in HTML
+  options.softbreak = options.softbreak || '\n';
+  // set to "<br />" to make them hard breaks
+  // set to " " if you want to ignore line wrapping in source
+
+  this.disableTags = 0;
+  this.lastOut = "\n";
+  this.options = options;
+}
+
+/* Node methods */
+
+function text(node) {
+  this.out(node.literal);
+}
+
+function softbreak() {
+  this.lit(this.options.softbreak);
+}
+
+function linebreak() {
+  this.tag('br', [], true);
+  this.cr();
+}
+
+function link(node, entering) {
+  var attrs = this.attrs(node);
+  if (entering) {
+      if (!(this.options.safe && potentiallyUnsafe(node.destination))) {
+          attrs.push(['href', esc(node.destination, true)]);
+      }
+      if (node.title) {
+          attrs.push(['title', esc(node.title, true)]);
+      }
+      this.tag('a', attrs);
+  } else {
+      this.tag('/a');
+  }
+}
+
+function image(node, entering) {
+  if (entering) {
+      if (this.disableTags === 0) {
+          if (this.options.safe &&
+               potentiallyUnsafe(node.destination)) {
+              this.lit('<img src="" alt="');
+          } else {
+              this.lit('<img src="' + esc(node.destination, true) +
+                  '" alt="');
+          }
+      }
+      this.disableTags += 1;
+  } else {
+      this.disableTags -= 1;
+      if (this.disableTags === 0) {
+          if (node.title) {
+              this.lit('" title="' + esc(node.title, true));
+          }
+          this.lit('" />');
+      }
+  }
+}
+
+function emph(node, entering) {
+  this.tag(entering ? 'em' : '/em');
+}
+
+function strong(node, entering) {
+  this.tag(entering ? 'strong' : '/strong');
+}
+
+function paragraph(node, entering) {
+  var grandparent = node.parent.parent
+    , attrs = this.attrs(node);
+  if (grandparent !== null &&
+      grandparent.type === 'list') {
+      if (grandparent.listTight) {
+          return;
+      }
+  }
+  if (entering) {
+      this.cr();
+      this.tag('p', attrs);
+  } else {
+      this.tag('/p');
+      this.cr();
+  }
+}
+
+function heading(node, entering) {
+  var tagname = 'h' + node.level
+    , attrs = this.attrs(node);
+  if (entering) {
+      this.cr();
+      this.tag(tagname, attrs);
+  } else {
+      this.tag('/' + tagname);
+      this.cr();
+  }
+}
+
+function code(node) {
+  this.tag('code');
+  this.out(node.literal);
+  this.tag('/code');
+}
+
+function code_block(node) {
+  var info_words = node.info ? node.info.split(/\s+/) : []
+    , attrs = this.attrs(node);
+  if (info_words.length > 0 && info_words[0].length > 0) {
+      attrs.push(['class', 'language-' + esc(info_words[0], true)]);
+  }
+  this.cr();
+  this.tag('pre');
+  this.tag('code', attrs);
+  this.out(node.literal);
+  this.tag('/code');
+  this.tag('/pre');
+  this.cr();
+}
+
+function thematic_break(node) {
+  var attrs = this.attrs(node);
+  this.cr();
+  this.tag('hr', attrs, true);
+  this.cr();
+}
+
+function block_quote(node, entering) {
+  var attrs = this.attrs(node);
+  if (entering) {
+      this.cr();
+      this.tag('blockquote', attrs);
+      this.cr();
+  } else {
+      this.cr();
+      this.tag('/blockquote');
+      this.cr();
+  }
+}
+
+function list(node, entering) {
+  var tagname = node.listType === 'bullet' ? 'ul' : 'ol'
+    , attrs = this.attrs(node);
+
+  if (entering) {
+      var start = node.listStart;
+      if (start !== null && start !== 1) {
+          attrs.push(['start', start.toString()]);
+      }
+      this.cr();
+      this.tag(tagname, attrs);
+      this.cr();
+  } else {
+      this.cr();
+      this.tag('/' + tagname);
+      this.cr();
+  }
+}
+
+function item(node, entering) {
+  var attrs = this.attrs(node);
+  if (entering) {
+      this.tag('li', attrs);
+  } else {
+      this.tag('/li');
+      this.cr();
+  }
+}
+
+function html_inline(node) {
+  if (this.options.safe) {
+      this.lit('<!-- raw HTML omitted -->');
+  } else {
+      this.lit(node.literal);
+  }
+}
+
+function html_block(node) {
+  this.cr();
+  if (this.options.safe) {
+      this.lit('<!-- raw HTML omitted -->');
+  } else {
+      this.lit(node.literal);
+  }
+  this.cr();
+}
+
+function custom_inline(node, entering) {
+  if (entering && node.onEnter) {
+      this.lit(node.onEnter);
+  } else if (!entering && node.onExit) {
+      this.lit(node.onExit);
+  }
+}
+
+function custom_block(node, entering) {
+  this.cr();
+  if (entering && node.onEnter) {
+      this.lit(node.onEnter);
+  } else if (!entering && node.onExit) {
+      this.lit(node.onExit);
+  }
+  this.cr();
+}
+
+/* Helper methods */
+
+function out(s) {
+  this.lit(esc(s, false));
+}
+
+function attrs (node) {
+  var att = [];
+  if (this.options.sourcepos) {
+      var pos = node.sourcepos;
+      if (pos) {
+          att.push(['data-sourcepos', String(pos[0][0]) + ':' +
+                      String(pos[0][1]) + '-' + String(pos[1][0]) + ':' +
+                      String(pos[1][1])]);
+      }
+  }
+  return att;
+}
+
+// quick browser-compatible inheritance
+HtmlRenderer.prototype = Object.create(Renderer.prototype);
+
+HtmlRenderer.prototype.text = text;
+HtmlRenderer.prototype.html_inline = html_inline;
+HtmlRenderer.prototype.html_block = html_block;
+HtmlRenderer.prototype.softbreak = softbreak;
+HtmlRenderer.prototype.linebreak = linebreak;
+HtmlRenderer.prototype.link = link;
+HtmlRenderer.prototype.image = image;
+HtmlRenderer.prototype.emph = emph;
+HtmlRenderer.prototype.strong = strong;
+HtmlRenderer.prototype.paragraph = paragraph;
+HtmlRenderer.prototype.heading = heading;
+HtmlRenderer.prototype.code = code;
+HtmlRenderer.prototype.code_block = code_block;
+HtmlRenderer.prototype.thematic_break = thematic_break;
+HtmlRenderer.prototype.block_quote = block_quote;
+HtmlRenderer.prototype.list = list;
+HtmlRenderer.prototype.item = item;
+HtmlRenderer.prototype.custom_inline = custom_inline;
+HtmlRenderer.prototype.custom_block = custom_block;
+
+HtmlRenderer.prototype.out = out;
+HtmlRenderer.prototype.tag = tag;
+HtmlRenderer.prototype.attrs = attrs;
+
+module.exports = HtmlRenderer;
+
+
+/***/ }),
+/* 12 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function Renderer() {}
+
 /**
+ *  Walks the AST and calls member methods for each Node type.
+ *
+ *  @param ast {Node} The root of the abstract syntax tree.
+ */
+function render(ast) {
+  var walker = ast.walker()
+    , event
+    , type;
+
+  this.buffer = '';
+  this.lastOut = '\n';
+
+  while((event = walker.next())) {
+    type = event.node.type;
+    if (this[type]) {
+      this[type](event.node, event.entering);
+    }
+  }
+  return this.buffer;
+}
+
+/**
+ *  Concatenate a literal string to the buffer.
+ *
+ *  @param str {String} The string to concatenate.
+ */
+function lit(str) {
+  this.buffer += str;
+  this.lastOut = str;
+}
+
+function cr() {
+    if (this.lastOut !== '\n') {
+        this.lit('\n');
+    }
+}
+
+/**
+ *  Concatenate a string to the buffer possibly escaping the content.
+ *
+ *  Concrete renderer implementations should override this method.
+ *
+ *  @param str {String} The string to concatenate.
+ */
+function out(str) {
+  this.lit(str);
+}
+
+Renderer.prototype.render = render;
+Renderer.prototype.out = out;
+Renderer.prototype.lit = lit;
+Renderer.prototype.cr  = cr;
+
+module.exports = Renderer;
+
+
+/***/ }),
+/* 13 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var escapeXml = __webpack_require__(0).escapeXml;
+
+// Helper function to produce an XML tag.
+var tag = function(name, attrs, selfclosing) {
+    var result = '<' + name;
+    if (attrs && attrs.length > 0) {
+        var i = 0;
+        var attrib;
+        while ((attrib = attrs[i]) !== undefined) {
+            result += ' ' + attrib[0] + '="' + escapeXml(attrib[1]) + '"';
+            i++;
+        }
+    }
+    if (selfclosing) {
+        result += ' /';
+    }
+
+    result += '>';
+    return result;
+};
+
+var reXMLTag = /\<[^>]*\>/;
+
+var toTagName = function(s) {
+    return s.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+};
+
+var renderNodes = function(block) {
+
+    var attrs;
+    var tagname;
+    var walker = block.walker();
+    var event, node, entering;
+    var buffer = "";
+    var lastOut = "\n";
+    var disableTags = 0;
+    var indentLevel = 0;
+    var indent = '  ';
+    var container;
+    var selfClosing;
+    var nodetype;
+
+    var out = function(s) {
+        if (disableTags > 0) {
+            buffer += s.replace(reXMLTag, '');
+        } else {
+            buffer += s;
+        }
+        lastOut = s;
+    };
+    var esc = this.escape;
+    var cr = function() {
+        if (lastOut !== '\n') {
+            buffer += '\n';
+            lastOut = '\n';
+            for (var i = indentLevel; i > 0; i--) {
+                buffer += indent;
+            }
+        }
+    };
+
+    var options = this.options;
+
+    if (options.time) { console.time("rendering"); }
+
+    buffer += '<?xml version="1.0" encoding="UTF-8"?>\n';
+    buffer += '<!DOCTYPE document SYSTEM "CommonMark.dtd">\n';
+
+    while ((event = walker.next())) {
+        entering = event.entering;
+        node = event.node;
+        nodetype = node.type;
+
+        container = node.isContainer;
+        selfClosing = nodetype === 'thematic_break' || nodetype === 'linebreak' ||
+            nodetype === 'softbreak';
+        tagname = toTagName(nodetype);
+
+        if (entering) {
+
+            attrs = [];
+
+            switch (nodetype) {
+            case 'document':
+                attrs.push(['xmlns', 'http://commonmark.org/xml/1.0']);
+                break;
+            case 'list':
+                if (node.listType !== null) {
+                    attrs.push(['type', node.listType.toLowerCase()]);
+                }
+                if (node.listStart !== null) {
+                    attrs.push(['start', String(node.listStart)]);
+                }
+                if (node.listTight !== null) {
+                    attrs.push(['tight', (node.listTight ? 'true' : 'false')]);
+                }
+                var delim = node.listDelimiter;
+                if (delim !== null) {
+                    var delimword = '';
+                    if (delim === '.') {
+                        delimword = 'period';
+                    } else {
+                        delimword = 'paren';
+                    }
+                    attrs.push(['delimiter', delimword]);
+                }
+                break;
+            case 'code_block':
+                if (node.info) {
+                    attrs.push(['info', node.info]);
+                }
+                break;
+            case 'heading':
+                attrs.push(['level', String(node.level)]);
+                break;
+            case 'link':
+            case 'image':
+                attrs.push(['destination', node.destination]);
+                attrs.push(['title', node.title]);
+                break;
+            case 'custom_inline':
+            case 'custom_block':
+                attrs.push(['on_enter', node.onEnter]);
+                attrs.push(['on_exit', node.onExit]);
+                break;
+            default:
+                break;
+            }
+            if (options.sourcepos) {
+                var pos = node.sourcepos;
+                if (pos) {
+                    attrs.push(['sourcepos', String(pos[0][0]) + ':' +
+                                String(pos[0][1]) + '-' + String(pos[1][0]) + ':' +
+                                String(pos[1][1])]);
+                }
+            }
+
+            cr();
+            out(tag(tagname, attrs, selfClosing));
+            if (container) {
+                indentLevel += 1;
+            } else if (!container && !selfClosing) {
+                var lit = node.literal;
+                if (lit) {
+                    out(esc(lit));
+                }
+                out(tag('/' + tagname));
+            }
+        } else {
+            indentLevel -= 1;
+            cr();
+            out(tag('/' + tagname));
+        }
+
+
+    }
+    if (options.time) { console.timeEnd("rendering"); }
+    buffer += '\n';
+    return buffer;
+};
+
+// The XmlRenderer object.
+function XmlRenderer(options){
+    return {
+        // default options:
+        softbreak: '\n', // by default, soft breaks are rendered as newlines in HTML
+        // set to "<br />" to make them hard breaks
+        // set to " " if you want to ignore line wrapping in source
+        escape: escapeXml,
+        options: options || {},
+        render: renderNodes
+    };
+}
+
+module.exports = XmlRenderer;
+
+
+/***/ }),
+/* 14 */
+/***/ (function(module, exports, __webpack_require__) {
+
+var entityMap = __webpack_require__(3),
+    legacyMap = __webpack_require__(18),
+    xmlMap    = __webpack_require__(4),
+    decodeCodePoint = __webpack_require__(15);
+
+var decodeXMLStrict  = getStrictDecoder(xmlMap),
+    decodeHTMLStrict = getStrictDecoder(entityMap);
+
+function getStrictDecoder(map){
+	var keys = Object.keys(map).join("|"),
+	    replace = getReplacer(map);
+
+	keys += "|#[xX][\\da-fA-F]+|#\\d+";
+
+	var re = new RegExp("&(?:" + keys + ");", "g");
+
+	return function(str){
+		return String(str).replace(re, replace);
+	};
+}
+
+var decodeHTML = (function(){
+	var legacy = Object.keys(legacyMap)
+		.sort(sorter);
+
+	var keys = Object.keys(entityMap)
+		.sort(sorter);
+
+	for(var i = 0, j = 0; i < keys.length; i++){
+		if(legacy[j] === keys[i]){
+			keys[i] += ";?";
+			j++;
+		} else {
+			keys[i] += ";";
+		}
+	}
+
+	var re = new RegExp("&(?:" + keys.join("|") + "|#[xX][\\da-fA-F]+;?|#\\d+;?)", "g"),
+	    replace = getReplacer(entityMap);
+
+	function replacer(str){
+		if(str.substr(-1) !== ";") str += ";";
+		return replace(str);
+	}
+
+	//TODO consider creating a merged map
+	return function(str){
+		return String(str).replace(re, replacer);
+	};
+}());
+
+function sorter(a, b){
+	return a < b ? 1 : -1;
+}
+
+function getReplacer(map){
+	return function replace(str){
+		if(str.charAt(1) === "#"){
+			if(str.charAt(2) === "X" || str.charAt(2) === "x"){
+				return decodeCodePoint(parseInt(str.substr(3), 16));
+			}
+			return decodeCodePoint(parseInt(str.substr(2), 10));
+		}
+		return map[str.slice(1, -1)];
+	};
+}
+
+module.exports = {
+	XML: decodeXMLStrict,
+	HTML: decodeHTML,
+	HTMLStrict: decodeHTMLStrict
+};
+
+/***/ }),
+/* 15 */
+/***/ (function(module, exports, __webpack_require__) {
+
+var decodeMap = __webpack_require__(17);
+
+module.exports = decodeCodePoint;
+
+// modified version of https://github.com/mathiasbynens/he/blob/master/src/he.js#L94-L119
+function decodeCodePoint(codePoint){
+
+	if((codePoint >= 0xD800 && codePoint <= 0xDFFF) || codePoint > 0x10FFFF){
+		return "\uFFFD";
+	}
+
+	if(codePoint in decodeMap){
+		codePoint = decodeMap[codePoint];
+	}
+
+	var output = "";
+
+	if(codePoint > 0xFFFF){
+		codePoint -= 0x10000;
+		output += String.fromCharCode(codePoint >>> 10 & 0x3FF | 0xD800);
+		codePoint = 0xDC00 | codePoint & 0x3FF;
+	}
+
+	output += String.fromCharCode(codePoint);
+	return output;
+}
+
+
+/***/ }),
+/* 16 */
+/***/ (function(module, exports, __webpack_require__) {
+
+var inverseXML = getInverseObj(__webpack_require__(4)),
+    xmlReplacer = getInverseReplacer(inverseXML);
+
+exports.XML = getInverse(inverseXML, xmlReplacer);
+
+var inverseHTML = getInverseObj(__webpack_require__(3)),
+    htmlReplacer = getInverseReplacer(inverseHTML);
+
+exports.HTML = getInverse(inverseHTML, htmlReplacer);
+
+function getInverseObj(obj){
+	return Object.keys(obj).sort().reduce(function(inverse, name){
+		inverse[obj[name]] = "&" + name + ";";
+		return inverse;
+	}, {});
+}
+
+function getInverseReplacer(inverse){
+	var single = [],
+	    multiple = [];
+
+	Object.keys(inverse).forEach(function(k){
+		if(k.length === 1){
+			single.push("\\" + k);
+		} else {
+			multiple.push(k);
+		}
+	});
+
+	//TODO add ranges
+	multiple.unshift("[" + single.join("") + "]");
+
+	return new RegExp(multiple.join("|"), "g");
+}
+
+var re_nonASCII = /[^\0-\x7F]/g,
+    re_astralSymbols = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
+function singleCharReplacer(c){
+	return "&#x" + c.charCodeAt(0).toString(16).toUpperCase() + ";";
+}
+
+function astralReplacer(c){
+	// http://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
+	var high = c.charCodeAt(0);
+	var low  = c.charCodeAt(1);
+	var codePoint = (high - 0xD800) * 0x400 + low - 0xDC00 + 0x10000;
+	return "&#x" + codePoint.toString(16).toUpperCase() + ";";
+}
+
+function getInverse(inverse, re){
+	function func(name){
+		return inverse[name];
+	}
+
+	return function(data){
+		return data
+				.replace(re, func)
+				.replace(re_astralSymbols, astralReplacer)
+				.replace(re_nonASCII, singleCharReplacer);
+	};
+}
+
+var re_xmlChars = getInverseReplacer(inverseXML);
+
+function escapeXML(data){
+	return data
+			.replace(re_xmlChars, singleCharReplacer)
+			.replace(re_astralSymbols, astralReplacer)
+			.replace(re_nonASCII, singleCharReplacer);
+}
+
+exports.escape = escapeXML;
+
+
+/***/ }),
+/* 17 */
+/***/ (function(module, exports) {
+
+module.exports = {
+	"0": 65533,
+	"128": 8364,
+	"130": 8218,
+	"131": 402,
+	"132": 8222,
+	"133": 8230,
+	"134": 8224,
+	"135": 8225,
+	"136": 710,
+	"137": 8240,
+	"138": 352,
+	"139": 8249,
+	"140": 338,
+	"142": 381,
+	"145": 8216,
+	"146": 8217,
+	"147": 8220,
+	"148": 8221,
+	"149": 8226,
+	"150": 8211,
+	"151": 8212,
+	"152": 732,
+	"153": 8482,
+	"154": 353,
+	"155": 8250,
+	"156": 339,
+	"158": 382,
+	"159": 376
+};
+
+/***/ }),
+/* 18 */
+/***/ (function(module, exports) {
+
+module.exports = {
+	"Aacute": "Á",
+	"aacute": "á",
+	"Acirc": "Â",
+	"acirc": "â",
+	"acute": "´",
+	"AElig": "Æ",
+	"aelig": "æ",
+	"Agrave": "À",
+	"agrave": "à",
+	"amp": "&",
+	"AMP": "&",
+	"Aring": "Å",
+	"aring": "å",
+	"Atilde": "Ã",
+	"atilde": "ã",
+	"Auml": "Ä",
+	"auml": "ä",
+	"brvbar": "¦",
+	"Ccedil": "Ç",
+	"ccedil": "ç",
+	"cedil": "¸",
+	"cent": "¢",
+	"copy": "©",
+	"COPY": "©",
+	"curren": "¤",
+	"deg": "°",
+	"divide": "÷",
+	"Eacute": "É",
+	"eacute": "é",
+	"Ecirc": "Ê",
+	"ecirc": "ê",
+	"Egrave": "È",
+	"egrave": "è",
+	"ETH": "Ð",
+	"eth": "ð",
+	"Euml": "Ë",
+	"euml": "ë",
+	"frac12": "½",
+	"frac14": "¼",
+	"frac34": "¾",
+	"gt": ">",
+	"GT": ">",
+	"Iacute": "Í",
+	"iacute": "í",
+	"Icirc": "Î",
+	"icirc": "î",
+	"iexcl": "¡",
+	"Igrave": "Ì",
+	"igrave": "ì",
+	"iquest": "¿",
+	"Iuml": "Ï",
+	"iuml": "ï",
+	"laquo": "«",
+	"lt": "<",
+	"LT": "<",
+	"macr": "¯",
+	"micro": "µ",
+	"middot": "·",
+	"nbsp": " ",
+	"not": "¬",
+	"Ntilde": "Ñ",
+	"ntilde": "ñ",
+	"Oacute": "Ó",
+	"oacute": "ó",
+	"Ocirc": "Ô",
+	"ocirc": "ô",
+	"Ograve": "Ò",
+	"ograve": "ò",
+	"ordf": "ª",
+	"ordm": "º",
+	"Oslash": "Ø",
+	"oslash": "ø",
+	"Otilde": "Õ",
+	"otilde": "õ",
+	"Ouml": "Ö",
+	"ouml": "ö",
+	"para": "¶",
+	"plusmn": "±",
+	"pound": "£",
+	"quot": "\"",
+	"QUOT": "\"",
+	"raquo": "»",
+	"reg": "®",
+	"REG": "®",
+	"sect": "§",
+	"shy": "­",
+	"sup1": "¹",
+	"sup2": "²",
+	"sup3": "³",
+	"szlig": "ß",
+	"THORN": "Þ",
+	"thorn": "þ",
+	"times": "×",
+	"Uacute": "Ú",
+	"uacute": "ú",
+	"Ucirc": "Û",
+	"ucirc": "û",
+	"Ugrave": "Ù",
+	"ugrave": "ù",
+	"uml": "¨",
+	"Uuml": "Ü",
+	"uuml": "ü",
+	"Yacute": "Ý",
+	"yacute": "ý",
+	"yen": "¥",
+	"yuml": "ÿ"
+};
+
+/***/ }),
+/* 19 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+
+
+/* eslint-disable no-bitwise */
+
+var decodeCache = {};
+
+function getDecodeCache(exclude) {
+  var i, ch, cache = decodeCache[exclude];
+  if (cache) { return cache; }
+
+  cache = decodeCache[exclude] = [];
+
+  for (i = 0; i < 128; i++) {
+    ch = String.fromCharCode(i);
+    cache.push(ch);
+  }
+
+  for (i = 0; i < exclude.length; i++) {
+    ch = exclude.charCodeAt(i);
+    cache[ch] = '%' + ('0' + ch.toString(16).toUpperCase()).slice(-2);
+  }
+
+  return cache;
+}
+
+
+// Decode percent-encoded string.
+//
+function decode(string, exclude) {
+  var cache;
+
+  if (typeof exclude !== 'string') {
+    exclude = decode.defaultChars;
+  }
+
+  cache = getDecodeCache(exclude);
+
+  return string.replace(/(%[a-f0-9]{2})+/gi, function(seq) {
+    var i, l, b1, b2, b3, b4, chr,
+        result = '';
+
+    for (i = 0, l = seq.length; i < l; i += 3) {
+      b1 = parseInt(seq.slice(i + 1, i + 3), 16);
+
+      if (b1 < 0x80) {
+        result += cache[b1];
+        continue;
+      }
+
+      if ((b1 & 0xE0) === 0xC0 && (i + 3 < l)) {
+        // 110xxxxx 10xxxxxx
+        b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+
+        if ((b2 & 0xC0) === 0x80) {
+          chr = ((b1 << 6) & 0x7C0) | (b2 & 0x3F);
+
+          if (chr < 0x80) {
+            result += '\ufffd\ufffd';
+          } else {
+            result += String.fromCharCode(chr);
+          }
+
+          i += 3;
+          continue;
+        }
+      }
+
+      if ((b1 & 0xF0) === 0xE0 && (i + 6 < l)) {
+        // 1110xxxx 10xxxxxx 10xxxxxx
+        b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+        b3 = parseInt(seq.slice(i + 7, i + 9), 16);
+
+        if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80) {
+          chr = ((b1 << 12) & 0xF000) | ((b2 << 6) & 0xFC0) | (b3 & 0x3F);
+
+          if (chr < 0x800 || (chr >= 0xD800 && chr <= 0xDFFF)) {
+            result += '\ufffd\ufffd\ufffd';
+          } else {
+            result += String.fromCharCode(chr);
+          }
+
+          i += 6;
+          continue;
+        }
+      }
+
+      if ((b1 & 0xF8) === 0xF0 && (i + 9 < l)) {
+        // 111110xx 10xxxxxx 10xxxxxx 10xxxxxx
+        b2 = parseInt(seq.slice(i + 4, i + 6), 16);
+        b3 = parseInt(seq.slice(i + 7, i + 9), 16);
+        b4 = parseInt(seq.slice(i + 10, i + 12), 16);
+
+        if ((b2 & 0xC0) === 0x80 && (b3 & 0xC0) === 0x80 && (b4 & 0xC0) === 0x80) {
+          chr = ((b1 << 18) & 0x1C0000) | ((b2 << 12) & 0x3F000) | ((b3 << 6) & 0xFC0) | (b4 & 0x3F);
+
+          if (chr < 0x10000 || chr > 0x10FFFF) {
+            result += '\ufffd\ufffd\ufffd\ufffd';
+          } else {
+            chr -= 0x10000;
+            result += String.fromCharCode(0xD800 + (chr >> 10), 0xDC00 + (chr & 0x3FF));
+          }
+
+          i += 9;
+          continue;
+        }
+      }
+
+      result += '\ufffd';
+    }
+
+    return result;
+  });
+}
+
+
+decode.defaultChars   = ';/?:@&=+$,#';
+decode.componentChars = '';
+
+
+module.exports = decode;
+
+
+/***/ }),
+/* 20 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+
+
+var encodeCache = {};
+
+
+// Create a lookup array where anything but characters in `chars` string
+// and alphanumeric chars is percent-encoded.
+//
+function getEncodeCache(exclude) {
+  var i, ch, cache = encodeCache[exclude];
+  if (cache) { return cache; }
+
+  cache = encodeCache[exclude] = [];
+
+  for (i = 0; i < 128; i++) {
+    ch = String.fromCharCode(i);
+
+    if (/^[0-9a-z]$/i.test(ch)) {
+      // always allow unencoded alphanumeric characters
+      cache.push(ch);
+    } else {
+      cache.push('%' + ('0' + i.toString(16).toUpperCase()).slice(-2));
+    }
+  }
+
+  for (i = 0; i < exclude.length; i++) {
+    cache[exclude.charCodeAt(i)] = exclude[i];
+  }
+
+  return cache;
+}
+
+
+// Encode unsafe characters with percent-encoding, skipping already
+// encoded sequences.
+//
+//  - string       - string to encode
+//  - exclude      - list of characters to ignore (in addition to a-zA-Z0-9)
+//  - keepEscaped  - don't encode '%' in a correct escape sequence (default: true)
+//
+function encode(string, exclude, keepEscaped) {
+  var i, l, code, nextCode, cache,
+      result = '';
+
+  if (typeof exclude !== 'string') {
+    // encode(string, keepEscaped)
+    keepEscaped  = exclude;
+    exclude = encode.defaultChars;
+  }
+
+  if (typeof keepEscaped === 'undefined') {
+    keepEscaped = true;
+  }
+
+  cache = getEncodeCache(exclude);
+
+  for (i = 0, l = string.length; i < l; i++) {
+    code = string.charCodeAt(i);
+
+    if (keepEscaped && code === 0x25 /* % */ && i + 2 < l) {
+      if (/^[0-9a-f]{2}$/i.test(string.slice(i + 1, i + 3))) {
+        result += string.slice(i, i + 3);
+        i += 2;
+        continue;
+      }
+    }
+
+    if (code < 128) {
+      result += cache[code];
+      continue;
+    }
+
+    if (code >= 0xD800 && code <= 0xDFFF) {
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < l) {
+        nextCode = string.charCodeAt(i + 1);
+        if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+          result += encodeURIComponent(string[i] + string[i + 1]);
+          i++;
+          continue;
+        }
+      }
+      result += '%EF%BF%BD';
+      continue;
+    }
+
+    result += encodeURIComponent(string[i]);
+  }
+
+  return result;
+}
+
+encode.defaultChars   = ";/?:@&=+$,-_.!~*'()#";
+encode.componentChars = "-_.!~*'()";
+
+
+module.exports = encode;
+
+
+/***/ }),
+/* 21 */
+/***/ (function(module, exports) {
+
+/*! http://mths.be/repeat v0.2.0 by @mathias */
+if (!String.prototype.repeat) {
+	(function() {
+		'use strict'; // needed to support `apply`/`call` with `undefined`/`null`
+		var defineProperty = (function() {
+			// IE 8 only supports `Object.defineProperty` on DOM elements
+			try {
+				var object = {};
+				var $defineProperty = Object.defineProperty;
+				var result = $defineProperty(object, object, object) && $defineProperty;
+			} catch(error) {}
+			return result;
+		}());
+		var repeat = function(count) {
+			if (this == null) {
+				throw TypeError();
+			}
+			var string = String(this);
+			// `ToInteger`
+			var n = count ? Number(count) : 0;
+			if (n != n) { // better `isNaN`
+				n = 0;
+			}
+			// Account for out-of-bounds indices
+			if (n < 0 || n == Infinity) {
+				throw RangeError();
+			}
+			var result = '';
+			while (n) {
+				if (n % 2 == 1) {
+					result += string;
+				}
+				if (n > 1) {
+					string += string;
+				}
+				n >>= 1;
+			}
+			return result;
+		};
+		if (defineProperty) {
+			defineProperty(String.prototype, 'repeat', {
+				'value': repeat,
+				'configurable': true,
+				'writable': true
+			});
+		} else {
+			String.prototype.repeat = repeat;
+		}
+	}());
+}
+
+
+/***/ }),
+/* 22 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+var _traverse=__webpack_require__(5);var _traverse2=_interopRequireDefault(_traverse);var _commonmark=__webpack_require__(6);function _interopRequireDefault(obj){return obj&&obj.__esModule?obj:{default:obj};}/* global NodeFilter, XMLHttpRequest */module.exports=function readout(){var readoutNS='data-readout-src';var root=document.documentElement;var reader=new _commonmark.Parser();var writer=new _commonmark.HtmlRenderer();var treeWalker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT,{acceptNode:function acceptNode(node){return node.hasAttribute(readoutNS)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP;}});var currentPath=[];var anchor=document.createElement('a');var traverseOpts={each:function each(node){currentPath.push(node.getAttribute(readoutNS));},leaf:function leaf(node){anchor.href=currentPath.reduce(function(result,el){return result+'/'+el;});get(anchor.href,function(data){node.innerHTML=writer.render(reader.parse(data));});},sibling:function sibling(){currentPath.pop();}};(0,_traverse2.default)(treeWalker,traverseOpts);};/**
  * url
  * callback (httpReponseText)
- */
-function get(url, callback) {
-  var httpRequest = new XMLHttpRequest();
-  httpRequest.onreadystatechange = function () {
-    if (httpRequest.readyState === XMLHttpRequest.DONE && httpRequest.status === 200) {
-      callback(httpRequest.responseText);
-    }
-  };
-  httpRequest.open('GET', url, true);
-  httpRequest.send();
-}
+ */function get(url,callback){var httpRequest=new XMLHttpRequest();httpRequest.onreadystatechange=function(){if(httpRequest.readyState===XMLHttpRequest.DONE&&httpRequest.status===200){callback(httpRequest.responseText);}};httpRequest.open('GET',url,true);httpRequest.send();}
 //# sourceMappingURL=readout.js.map
 
 /***/ })
