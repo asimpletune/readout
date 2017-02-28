@@ -5,9 +5,5 @@ module.exports = {
     library: 'Readout',
     filename: './dist/readout.js'
   },
-  externals: {
-    // require("jquery") is external and available
-    //  on the global var jQuery
-    'jquery': 'jQuery'
-  }
+  devtool: 'source-map'
 }
