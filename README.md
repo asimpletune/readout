@@ -20,10 +20,9 @@ npm install readout-markdown
 
 ## How to use
 
-1. Put dependencies into your html or template
+1. Put readout into your html or template
 
     ```html
-    <script type="text/javascript" src="/bower_components/jquery/dist/jquery.min.js"></script>
     <script type="text/javascript" src="/bower_components/readout/dist/readout.js"></script>
     ```
 
@@ -53,15 +52,8 @@ npm install readout-markdown
 
     ```html
     <script type="text/javascript">
-      $(function() {
+      window.onload = function () {
         Readout();
-      });
+      }      
     </script>
     ```
-
-## Options
-
-The constructor accepts the following options:
-
-* `namespace`: You can specify your own custom namespace, instead of `data-readout-src`, but it must follow the string pattern `data-\*`
-* `calllback: function(el, html)`: You can add a callback that accepts `el` and `html` as parameters. By default `el` just gets assigned the resulting `html`.
